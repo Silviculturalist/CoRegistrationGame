@@ -1,0 +1,13 @@
+name: CoRegGameEnv
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - pygame
+  - pynput
+  - tk
