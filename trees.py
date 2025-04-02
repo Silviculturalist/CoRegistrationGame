@@ -182,19 +182,65 @@ class StandIterator:
 
 
 class Stand:
-    def __init__(self, ID, file_path):
+    def __init__(self, ID, file_path, mapping=None, sep='\t'):
         self.standid = ID
         self.plots = []
         self.center = None
-        reader = pd.read_csv(file_path, sep='\t').to_dict(orient='records')
-        reader = [row for row in reader if row['Stand'] == int(ID)]
+
+        # Read CSV using the provided separator.
+        reader = pd.read_csv(file_path, sep=sep).to_dict(orient='records')
+
+        # Determine the column names using the mapping, if provided.
+        # For StandID, if the user did not select a column (empty string), assume all rows belong to the provided stand.
+        if mapping:
+            stand_col = mapping.get('StandID', '').strip()  # May be empty.
+            plot_col = mapping.get('PlotID', 'PLOT')
+            tree_col = mapping.get('TreeID', 'TreeID')
+            x_col = mapping.get('X', 'X_GROUND')
+            y_col = mapping.get('Y', 'Y_GROUND')
+            dbh_col = mapping.get('DBH', 'STEMDIAM')
+            species_col = mapping.get('Species', 'Species')
+            xc_col = mapping.get('XC', x_col)
+            yc_col = mapping.get('YC', y_col)
+        else:
+            # Use default column names.
+            stand_col = 'Stand'
+            plot_col = 'PLOT'
+            tree_col = 'TreeID'
+            x_col = 'X_GROUND'
+            y_col = 'Y_GROUND'
+            dbh_col = 'STEMDIAM'
+            species_col = 'Species'
+            xc_col = 'XC'
+            yc_col = 'YC'
+
+        # If a stand column is specified, filter rows; otherwise, assume all rows belong to this stand.
+        if stand_col:
+            reader = [row for row in reader if row.get(stand_col) is not None and int(row[stand_col]) == int(ID)]
+        else:
+            # No stand column mapping provided—assume every row belongs to the provided stand.
+            for row in reader:
+                row['Stand'] = ID
+
+        if not reader:
+            raise ValueError(f"No data found for Stand ID: {ID}")
+
+        # Process each row to create trees and plots.
         for row in reader:
-            plot_id = row['PLOT']
-            tree_id = row['TreeID']
-            tree = Tree(tree_id, x=row['X_GROUND'], y=row['Y_GROUND'], species=row['Species'], stemdiam_cm=row['STEMDIAM'] / 10)
+            plot_id = row.get(plot_col)
+            tree_id = row.get(tree_col)
+            try:
+                stemdiam_cm = float(row.get(dbh_col, 0))
+            except (ValueError, TypeError):
+                stemdiam_cm = None
+
+            tree = Tree(tree_id, x=row.get(x_col), y=row.get(y_col),
+                        species=row.get(species_col), stemdiam_cm=stemdiam_cm)
+            # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:
-                plot = Plot(plotid=plot_id, center=(row['XC'], row['YC']))
+                center = (row.get(xc_col, row.get(x_col)), row.get(yc_col, row.get(y_col)))
+                plot = Plot(plotid=plot_id, center=center)
                 self.add_plot(plot)
             plot.append_tree(tree)
             self._update_center()
