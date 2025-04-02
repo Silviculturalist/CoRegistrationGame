@@ -133,6 +133,8 @@ Period (`.`): Mark the current plot as unplaceable (do not save its position).
 
 `B`: Step back – revert the last confirmed plot and restore its previous state.
 
+`O`: Reset plot position - revert any user changes to plot.
+
 ### Other:
 
 `Space`: Toggle flash mode (visualize different data layers).
