@@ -62,18 +62,39 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
     if not os.path.isdir('./Trees'):
         os.mkdir('./Trees')
 
-    # Load the stand data from the CSV file (using our new Stand class)
-    MyData = Stand(ID=id, file_path=file_path)
-    # Load CHM data (using CHMPlot from the new chm_plot.py module)
-    MyCHM = CHMPlot(file_path=chm_path, x=MyData.center[0], y=MyData.center[1], dist=70)
-    # Create the PlotCenters object to manage plot centers
-    MyPlotCenters = PlotCenters(file_path, MyData)
+    # Pass the mapping and separator to the Stand initializer.
+    MyData = Stand(ID=id, file_path=file_path, mapping=file_column_mapping, sep=file_sep)
+    # Optionally, update CHMPlot similarly if needed:
+    MyCHM = CHMPlot(file_path=chm_path, x=MyData.center[0], y=MyData.center[1], dist=70, mapping=chm_column_mapping,sep=chm_sep)
+
+    MyPlotCenters = PlotCenters(MyData)
     
-    # Launch the main application (from app.py)
     from app import App
     root = tk.Tk()
     app = App(root, MyData, MyCHM, MyPlotCenters)
     root.mainloop()
+
+
+def toggle_file_impute_dbh():
+    if file_dbh_calc_var.get():
+        file_h_calc_var.set(False)
+    update_params_section()
+
+def toggle_file_impute_h():
+    if file_h_calc_var.get():
+        file_dbh_calc_var.set(False)
+    update_params_section()
+
+def toggle_chm_impute_dbh():
+    if chm_dbh_calc_var.get():
+        chm_h_calc_var.set(False)
+    update_params_section()
+
+def toggle_chm_impute_h():
+    if chm_h_calc_var.get():
+        chm_dbh_calc_var.set(False)
+    update_params_section()
+
 
 def on_start():
     id_val = id_entry.get()
@@ -112,9 +133,11 @@ def on_start():
               float(param_entry_2.get()), 
               float(param_entry_3.get())]
     
+    # Pass mapping and separator to Stand
     start_program(id_val, file_path_val, chm_path_val, file_column_mapping, 
                   chm_column_mapping, file_sep_val, chm_sep_val, file_calculate_dbh, 
                   file_calculate_h, chm_calculate_dbh, chm_calculate_h, params, output_folder_val)
+
 
 def select_file_path():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
@@ -192,14 +215,15 @@ for i, label in enumerate(['StandID', 'PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H'])
     ttk.Label(file_path_frame, text=label).grid(column=0, row=i+2, padx=5, pady=2)
     file_comboboxes[label] = ttk.Combobox(file_path_frame, textvariable=file_mapping_vars[label], state="readonly")
     file_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
-    # For DBH and H, add a checkbox to choose whether to calculate these values
-    if label in ['DBH', 'H']:
-        if label == 'DBH':
-            file_dbh_calc_var = tk.BooleanVar()
-            ttk.Checkbutton(file_path_frame, variable=file_dbh_calc_var, command=lambda: None).grid(column=2, row=i+2, padx=5, pady=2)
-        else:
-            file_h_calc_var = tk.BooleanVar()
-            ttk.Checkbutton(file_path_frame, variable=file_h_calc_var, command=lambda: None).grid(column=2, row=i+2, padx=5, pady=2)
+    if label == 'DBH':
+        file_dbh_calc_var = tk.BooleanVar()
+        ttk.Checkbutton(file_path_frame, text="Impute DBH", variable=file_dbh_calc_var,
+                        command=toggle_file_impute_dbh).grid(column=2, row=i+2, padx=5, pady=2)
+    elif label == 'H':
+        file_h_calc_var = tk.BooleanVar()
+        ttk.Checkbutton(file_path_frame, text="Impute Height", variable=file_h_calc_var,
+                        command=toggle_file_impute_h).grid(column=2, row=i+2, padx=5, pady=2)
+
 
 # CHM Path Frame
 chm_path_frame = ttk.LabelFrame(root, text="CHM Data File Path")
@@ -224,13 +248,15 @@ for i, label in enumerate(['StandID', 'PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H'])
     ttk.Label(chm_path_frame, text=label).grid(column=0, row=i+2, padx=5, pady=2)
     chm_comboboxes[label] = ttk.Combobox(chm_path_frame, textvariable=chm_mapping_vars[label], state="readonly")
     chm_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
-    if label in ['DBH', 'H']:
-        if label == 'DBH':
-            chm_dbh_calc_var = tk.BooleanVar()
-            ttk.Checkbutton(chm_path_frame, variable=chm_dbh_calc_var, command=lambda: None).grid(column=2, row=i+2, padx=5, pady=2)
-        else:
-            chm_h_calc_var = tk.BooleanVar()
-            ttk.Checkbutton(chm_path_frame, variable=chm_h_calc_var, command=lambda: None).grid(column=2, row=i+2, padx=5, pady=2)
+    if label == 'DBH':
+        chm_dbh_calc_var = tk.BooleanVar()
+        ttk.Checkbutton(chm_path_frame, text="Impute DBH", variable=chm_dbh_calc_var,
+                        command=toggle_chm_impute_dbh).grid(column=2, row=i+2, padx=5, pady=2)
+    elif label == 'H':
+        chm_h_calc_var = tk.BooleanVar()
+        ttk.Checkbutton(chm_path_frame, text="Impute Height", variable=chm_h_calc_var,
+                        command=toggle_chm_impute_h).grid(column=2, row=i+2, padx=5, pady=2)
+
 
 # Output Folder Frame
 output_folder_frame = ttk.LabelFrame(root, text="Output Folder")
