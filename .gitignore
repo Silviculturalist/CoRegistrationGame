@@ -1,0 +1,8 @@
+# Ignore Python bytecode and __pycache__ directories
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore output directories
+/Transformations/
+/Trees/
