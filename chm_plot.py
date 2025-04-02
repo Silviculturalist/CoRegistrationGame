@@ -50,32 +50,50 @@ def get_viewport_scale(stand, screen_size):
     return scale_factor
 
 class CHMPlot(Plot):
-    def __init__(self, file_path, x=None, y=None, dist=40, height_unit='m'):
+    def __init__(self, file_path, x=None, y=None, dist=40, height_unit='m', mapping=None, sep='\t'):
         self.trees = []
         self.plotid = 1
-        reader = pd.read_csv(file_path, sep='\t')
+        # Read CSV with the provided separator.
+        reader = pd.read_csv(file_path, sep=sep)
+        
+        # Use mapping for CHM file columns if provided.
+        if mapping:
+            x_col = mapping.get('X', 'X').strip() or 'X'
+            y_col = mapping.get('Y', 'Y').strip() or 'Y'
+            height_col = mapping.get('H', 'H').strip() or 'H'
+            idals_col = mapping.get('TreeID', 'IDALS').strip() or 'IDALS'
+        else:
+            x_col, y_col, height_col, idals_col = 'X', 'Y', 'H', 'IDALS'
+        
+        # If a point is provided and a distance is specified, filter rows by distance.
         if x is not None and y is not None and dist is not None and dist > 0:
-            coordinates = reader[['X', 'Y']].values
+            try:
+                coordinates = reader[[x_col, y_col]].values
+            except KeyError:
+                raise KeyError(f"Columns [{x_col}, {y_col}] not found in the CHM file.")
             point = np.array([[x, y]])
             distances = cdist(coordinates, point, metric='euclidean')
             df_filtered = reader[distances[:, 0] <= dist]
-            reader = df_filtered.to_dict(orient='records')
-        else:
-            reader = reader.to_dict(orient='records')
+            reader = df_filtered
+        # Convert reader to a dictionary list for further processing.
+        reader = reader.to_dict(orient='records')
+        
         for row in reader:
+            # Determine the height based on the provided height_unit.
             if height_unit == 'm':
-                height = row['H'] * 10
+                height = row[height_col] * 10
             elif height_unit == 'dm':
-                height = row['H']
+                height = row[height_col]
             elif height_unit == 'cm':
-                height = row['H'] / 10
+                height = row[height_col] / 10
             if height > 450:
                 continue
-            tree = Tree(tree_id=row['IDALS'], x=row['X'], y=row['Y'], height_dm=height)
+            tree = Tree(tree_id=row[idals_col], x=row[x_col], y=row[y_col], height_dm=height)
             self.append_tree(tree)
         self.center = np.mean(np.array([[tree.x, tree.y] for tree in self.trees]), axis=0)
         self.removed_stems = []
         self.alltrees = deepcopy(self.trees)
+
 
     def remove_matches(self, plot, min_dist_percent=15):
         """
@@ -125,12 +143,20 @@ class SavedPlot(CHMPlot):
         self.removed_stems = []
         self.alltrees = deepcopy(self.trees)
 
-class PlotCenters:
-    def __init__(self, file_path, stand):
-        dat = pd.read_csv(file_path, sep='\t')
-        self.centers = np.array(list(dat.groupby(['XC', 'YC']).groups.keys()))
-        self.centers = self.centers[cdist(self.centers, np.array([stand.center])).squeeze() < 70]
 
+class PlotCenters:
+    def __init__(self, stand):
+        """
+        Compute plot centers from the Stand object's plots.
+        Only centers within 70 units of the overall stand center are kept.
+        """
+        # Assume each plot in the stand has a 'current_center' attribute.
+        self.centers = np.array([plot.current_center for plot in stand.plots if plot.current_center is not None])
+        # Filter centers: only keep those within a distance of 70 from the stand's overall center.
+        if self.centers.size > 0:
+            self.centers = self.centers[cdist(self.centers, np.array([stand.center])).squeeze() < 70]
+        else:
+            self.centers = np.array([])
     def draw_single_center(self, screen, center, color, alpha, stand_center, scale_factor, screen_size):
         adjusted_position = to_screen_coordinates(center, stand_center, scale_factor, screen_size)
         adjusted_radius = 2  # constant radius
