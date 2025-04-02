@@ -89,58 +89,53 @@ python startup.py
 
 The startup menu (built with Tkinter) will allow you to:
 
-Select the Tree Data File and CHM Data File.
+- Select the Tree Data File and CHM Data File.
+- Specify CSV separators.
+- Map your CSV column names to the required fields (StandID, PlotID, TreeID, X, Y, DBH, H).
+- Choose whether to impute missing values for DBH or Height using the provided Näslund height-diameter relationship (only one imputation option per file is allowed).
+- Set Näslund model parameters (with a real-time preview of the height curve).
+- Select an output folder where the transformed tree data and transformation logs will be saved.
 
-Specify CSV separators.
-
-Map your CSV column names to the required fields (StandID, PlotID, TreeID, X, Y, DBH, H).
-
-Choose whether to impute missing values for DBH or Height using the provided Näslund height-diameter relationship (only one imputation option per file is allowed).
-
-Set Näslund model parameters (with a real-time preview of the height curve).
-
-Select an output folder where the transformed tree data and transformation logs will be saved.
-
-Once configured, click Start to launch the interactive application.
+Once configured, click `Start` to launch the interactive application.
 
 ## Keyboard Shortcuts
 During the interactive co-registration session, the following shortcuts are available:
 
 ### Viewport Navigation:
 
-W, A, S, D: Pan the viewport up, left, down, and right.
+`W`, `A`, `S`, `D`: Pan the viewport up, left, down, and right.
 
 ### Plot Adjustment:
 
-Arrow Keys (Up, Down, Left, Right): Shift the current plot.
+Arrow Keys (`Up`, `Down`, `Left`, `Right`): Shift the current plot.
 
-E: Rotate the current plot counterclockwise.
+`E`: Rotate the current plot counterclockwise.
 
-R: Rotate the current plot clockwise.
+`R`: Rotate the current plot clockwise.
 
-F: Flip the current plot vertically.
+`F`: Flip the current plot vertically.
 
-1, 2: Zoom in and out.
+`1`, `2`: Zoom in and out.
 
-6, 7: Increase or decrease the tree display scale.
+`6`, `7`: Increase or decrease the tree display scale.
 
-8: Reset the tree display scale to default.
+`8`: Reset the tree display scale to default.
 
 ### Plot Management:
 
-J: Join – attempts to compute an optimal plot alignment using a Fractional ICP algorithm.
+`J`: Join – attempts to compute an optimal plot alignment using a Fractional ICP algorithm.
 
-C: Confirm – saves the current plot’s transformation.
+`C`: Confirm – saves the current plot’s transformation.
 
-N: Skip the current plot.
+`N`: Skip the current plot.
 
-Period (.): Mark the current plot as unplaceable (do not save its position).
+Period (`.`): Mark the current plot as unplaceable (do not save its position).
 
-B: Step back – revert the last confirmed plot and restore its previous state.
+`B`: Step back – revert the last confirmed plot and restore its previous state.
 
 ### Other:
 
-Space: Toggle flash mode (visualize different data layers).
+`Space`: Toggle flash mode (visualize different data layers).
 
 ## Outputs
 The program generates the following outputs:
