@@ -381,9 +381,11 @@ class App:
             self.polygon_points = []
             self.update_listboxes()
 
-    def save_and_exit(self):
+    def on_closing(self):
         if self.after_id:
             self.root.after_cancel(self.after_id)
+
+        self.running = False
         df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient='index')
         transformation_dir = './Transformations'
         if not os.path.isdir(transformation_dir):
@@ -400,9 +402,6 @@ class App:
         self.root.quit()
         self.root.destroy()
 
-    def on_closing(self):
-        self.running = False
-        self.save_and_exit()
 
 if __name__ == "__main__":
     if len(sys.argv) == 5:
