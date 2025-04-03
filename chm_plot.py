@@ -157,6 +157,7 @@ class PlotCenters:
             self.centers = self.centers[cdist(self.centers, np.array([stand.center])).squeeze() < 70]
         else:
             self.centers = np.array([])
+            
     def draw_single_center(self, screen, center, color, alpha, stand_center, scale_factor, screen_size):
         adjusted_position = to_screen_coordinates(center, stand_center, scale_factor, screen_size)
         adjusted_radius = 2  # constant radius
@@ -180,9 +181,9 @@ def draw_tree(screen, tree, tree_scale, color, alpha, stand_center, scale_factor
     pygame.draw.circle(alpha_surface, color + (int(255 * alpha),), (adjusted_radius, adjusted_radius), adjusted_radius)
     screen.blit(alpha_surface, (adjusted_position[0] - adjusted_radius, adjusted_position[1] - adjusted_radius))
 
-def draw_plot(screen, tree_scale, plot, alpha, stand_center, scale_factor, screen_size, tree_component=False):
+def draw_plot(screen, tree_scale, plot, alpha, stand_center, scale_factor, screen_size, tree_component=False, fill_color=(0,0,255)):
     for tree in plot.trees:
-        draw_tree(screen, tree, tree_scale, (0, 0, 255), alpha, stand_center, scale_factor, screen_size, tree_component)
+        draw_tree(screen, tree, tree_scale, fill_color, alpha, stand_center, scale_factor, screen_size, tree_component)
 
 def draw_chm(stems, screen, tree_scale, alpha, stand_center, scale_factor, screen_size, tree_component=False):
     for tree in stems:
