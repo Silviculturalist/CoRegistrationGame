@@ -315,7 +315,7 @@ class App:
             self.current_plot_index = 0
             self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
         else:
-            self.save_and_exit()
+            self.on_closing()
         self.update_listboxes()
 
     def store_transformations(self, plot, fail=False):
