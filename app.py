@@ -3,8 +3,11 @@ import sys
 import queue
 import threading
 import tkinter as tk
+from tkinter import messagebox
 import pygame
 import logging
+import platform
+import subprocess
 from pynput import keyboard
 import pandas as pd
 import numpy as np
@@ -17,6 +20,16 @@ from ficp import FractionalICP
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def open_in_finder(folder_path):
+    """Open the given folder in the system file explorer."""
+    if platform.system() == "Windows":
+        os.startfile(folder_path)
+    elif platform.system() == "Darwin":
+        subprocess.Popen(["open", folder_path])
+    else:  # Assume Linux or similar
+        subprocess.Popen(["xdg-open", folder_path])
+
 
 # Constants
 TRANSLATE_STEP = 0.5
@@ -343,15 +356,74 @@ class App:
         self.update_listboxes()
 
     def confirm_plot(self):
-        self.store_transformations(self.current_plot)
-        self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
-        self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
-        if len(self.remaining_plots) > 0:
-            self.current_plot_index = 0
-            self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
+        # If we're on the last plot, ask for confirmation before removal.
+        if len(self.remaining_plots) == 1:
+            confirm_save = messagebox.askyesno("Confirm Save",
+                                                "You have confirmed the last plot.\n\n"
+                                                "Are you sure you want to save the results to files?")
+            if not confirm_save:
+                # Cancel the confirm so that the last plot remains active.
+                return
+            else:
+                self.store_transformations(self.current_plot)
+                # Now remove the last plot since user confirmed.
+                self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
+                self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
+                self.save_files()
+                self.show_success_dialog()
         else:
-            self.on_closing()
+            # For all plots except the last one, process normally.
+            self.store_transformations(self.current_plot)
+            self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
+            self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
+            # Update current plot pointer
+            if self.remaining_plots:
+                self.current_plot_index = 0
+                self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
         self.update_listboxes()
+
+
+    def save_files(self):
+        """Save trees and transformation files."""
+        # Save transformations
+        df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient='index')
+        transformation_dir = './Transformations'
+        if not os.path.isdir(transformation_dir):
+            os.mkdir(transformation_dir)
+        df_transform.to_csv(f'{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv', index=False)
+
+        # Save tree data
+        if isinstance(self.plot_stand, SavedStand):
+            self.plot_stand.write_out().to_csv(f'{self.plot_stand.fp}', index=False)
+        else:
+            tree_dir = './Trees'
+            if not os.path.isdir(tree_dir):
+                os.mkdir(tree_dir)
+            self.plot_stand.write_out().to_csv(f'{tree_dir}/Stand_{self.plot_stand.standid}_trees.csv', index=False)
+
+    def show_success_dialog(self):
+        """Show a dialog after a successful save with options to open folder or continue."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Successfully saved!")
+        tk.Label(dialog, text="Successfully saved!").pack(padx=20, pady=20)
+
+        def on_show_files():
+            # Open the output folder (for example, the Trees folder)
+            output_folder = os.path.abspath('./Trees')
+            open_in_finder(output_folder)
+            output_folder = os.path.abspath('./Transformations')
+            open_in_finder(output_folder)
+            dialog.destroy()
+
+        def on_continue():
+            dialog.destroy()
+            self.on_closing()
+
+        button_frame = tk.Frame(dialog)
+        button_frame.pack(pady=10)
+        tk.Button(button_frame, text="Show files in finder", command=on_show_files).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Continue", command=on_continue).pack(side=tk.LEFT, padx=5)
+
 
     def store_transformations(self, plot, fail=False):
         R, t, flip = plot.get_transform()
@@ -417,25 +489,10 @@ class App:
             self.update_listboxes()
 
     def on_closing(self):
-        if self.after_id:
-            self.root.after_cancel(self.after_id)
-
-        self.running = False
-        df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient='index')
-        transformation_dir = './Transformations'
-        if not os.path.isdir(transformation_dir):
-            os.mkdir(transformation_dir)
-        df_transform.to_csv(f'{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv', index=False)
-        if isinstance(self.plot_stand, SavedStand):
-            self.plot_stand.write_out().to_csv(f'{self.plot_stand.fp}', index=False)
-        else:
-            tree_dir = './Trees'
-            if not os.path.isdir(tree_dir):
-                os.mkdir(tree_dir)
-            self.plot_stand.write_out().to_csv(f'{tree_dir}/Stand_{self.plot_stand.standid}_trees.csv', index=False)
-        pygame.quit()
-        self.root.quit()
         self.root.destroy()
+        sys.exit()
+
+
 
 
 if __name__ == "__main__":
