@@ -40,6 +40,11 @@ TREE_SCALE_INITIAL = 1.0
 class App:
     def __init__(self, root, plot_stand, chm_stand, plot_centers):
         self.root = root
+        self.window_active = True  # assume active initially
+        # Bind both tkinter focus events (in case the overall app loses focus)
+        self.root.bind("<FocusIn>", self.on_focus_in)
+        self.root.bind("<FocusOut>", self.on_focus_out)
+        
         self.plot_stand = plot_stand
         self.chm_stand = chm_stand
         self.plot_centers = plot_centers
@@ -64,16 +69,48 @@ class App:
         self.zoom_step = ZOOM_STEP
         self.tree_scale = TREE_SCALE_INITIAL
         self.event_queue = queue.Queue()
+        self.listener = None  # Will hold the pynput listener instance.
+        self.flash_text = None # For flashing text messages
+        self.flash_end_time = 0
         self.create_ui()
         self.after_id = None
         self.run_pygame()
 
-    def setup_pynput_listener(self):
-        self.on_enter = threading.Event()
-        listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
-        listener.start()
+    def start_listener(self):
+        """Start the pynput keyboard listener if not already running."""
+        if self.listener is None:
+            self.listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
+            self.listener.start()
+            logging.info("Keyboard listener started.")
+
+    def stop_listener(self):
+        """Stop the pynput keyboard listener if running."""
+        if self.listener is not None:
+            self.listener.stop()
+            self.listener = None
+            logging.info("Keyboard listener stopped.")
+
+    def flash_message(self, message, duration=1.5):
+        """Set a flash message to be drawn for a given duration (in seconds)."""
+        self.flash_text = message
+        self.flash_end_time = time.time() + duration
+
+    # These tkinter focus handlers now also control the listener.
+    def on_focus_in(self, event):
+        self.window_active = True
+        self.start_listener()
+        self.flash_message("MOUSEOVER\nFOCUS GAINED")
+        logging.info("Focus gained (tkinter): flashing message and starting listener.")
+
+    def on_focus_out(self, event):
+        self.window_active = False
+        self.stop_listener()
+        self.flash_message("MOUSEOVER \nFOCUS LOST")
+        logging.info("Focus lost (tkinter): flashing message and stopping listener.")
 
     def on_press(self, key):
+        if not self.window_active:
+            return  # Ignore if the window is not active.
         try:
             key_val = key.char
         except AttributeError:
@@ -81,6 +118,8 @@ class App:
         self.event_queue.put(('press', key_val))
 
     def on_release(self, key):
+        if not self.window_active:
+            return  # Ignore if the window is not active.
         try:
             key_val = key.char
         except AttributeError:
@@ -183,10 +222,13 @@ class App:
         os.environ['SDL_WINDOWID'] = str(self.pygame_frame.winfo_id())
         os.environ['SDL_VIDEODRIVER'] = 'windib'
         pygame.init()
+            # Create a font for flash messages.
+        self.font = pygame.font.SysFont(None, 36)
         self.screen_size = (800, 600)
         self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE | pygame.HWSURFACE | pygame.DOUBLEBUF)
         self.running = True
-        self.setup_pynput_listener()
+        # Start the listener initially.
+        self.start_listener()
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -195,32 +237,72 @@ class App:
                     self.screen_size = event.size
                     self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE)
                     self.scale_factor = get_viewport_scale(self.plot_stand, self.screen_size)
+                # Handle focus events from the pygame window.
+                elif event.type == pygame.ACTIVEEVENT:
+                    # Check if the keyboard focus state changed (state 1)
+                    if event.state & 1:
+                        if event.gain == 0 and self.window_active:
+                            self.window_active = False
+                            self.stop_listener()
+                            self.flash_message("MOUSEOVER \nFOCUS LOST")
+                            logging.info("Pygame window lost focus: stopped keyboard listener.")
+                        elif event.gain == 1 and not self.window_active:
+                            self.window_active = True
+                            self.start_listener()
+                            self.flash_message("MOUSEOVER\nFOCUS GAINED")
+                            logging.info("Pygame window gained focus: restarted keyboard listener.")
             self.screen.fill((255, 255, 255))
-            # if self.chm_stand.trees
+            # Draw CHM and plots based on display_mode.
             if self.chm_stand.trees: 
                 if self.display_mode == 0:
                     # Draw all trees.
                     draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
                              alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
                 elif self.display_mode == 1:
-                    # Draw only unmatched trees (assume CHMStand.trees holds unmatched trees).
+                    # Draw only unmatched trees.
                     draw_chm(stems=self.chm_stand.trees, screen=self.screen, tree_scale=self.tree_scale, 
                              alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
                 elif self.display_mode == 2:
-                    # Draw the end result: both matched and unmatched trees.
+                    # Draw end result: both matched and unmatched trees.
                     draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
                              alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
                     for i, plot in enumerate(self.plot_stand.plots):
                         draw_plot(screen=self.screen, tree_scale=self.tree_scale, plot=plot, alpha=1,
-                                    stand_center=self.stand_center, scale_factor=self.scale_factor, 
-                                    screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
+                                  stand_center=self.stand_center, scale_factor=self.scale_factor, 
+                                  screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
 
             if self.current_plot:
                 draw_plot(self.screen, self.tree_scale, self.current_plot, 1, self.stand_center, self.scale_factor, self.screen_size, tree_component=True)
             if self.drawing_polygon:
                 draw_polygon(self.screen, self.polygon_points)
+
+            #Draw flash message if active
+            self.draw_flash_message()
+
+            
             pygame.display.flip()
             self.root.update()
+
+    def draw_flash_message(self):
+        """Draws the flash message on the pygame screen if it is still active."""
+        if self.flash_text and time.time() < self.flash_end_time:
+            # Split the message into lines.
+            lines = self.flash_text.split('\n')
+            total_height = 0
+            surfaces = []
+            for line in lines:
+                text_surface = self.font.render(line, True, (255, 0, 0))
+                surfaces.append(text_surface)
+                total_height += text_surface.get_height()
+            # Center the text on the screen.
+            y = (self.screen_size[1] - total_height) // 2
+            for surface in surfaces:
+                x = (self.screen_size[0] - surface.get_width()) // 2
+                self.screen.blit(surface, (x, y))
+                y += surface.get_height()
+        elif self.flash_text:
+            # Clear the flash message when the duration has expired.
+            self.flash_text = None
 
     def handle_keyup(self, key):
         if key == 'n' or key == '.':
@@ -238,17 +320,16 @@ class App:
             self.join_plot()
         elif key == 'space':
             now = time.time()
-            if self.last_space_press and (now-self.last_space_press < 0.3):
+            if self.last_space_press and (now - self.last_space_press < 0.3):
                 if self.display_mode == 2:
-                    self.display_mode = 0 #revert to default
+                    self.display_mode = 0  # revert to default
                 else:
                     self.display_mode = 2
-                self.last_space_press = None #reset
+                self.last_space_press = None  # reset
             else:
-                #Record this press and wait briefly to decide if it's single our double.
+                # Record this press and wait briefly to decide if it's single or double.
                 self.last_space_press = now
-                self.root.after(300,self.toggle_flash)
-
+                self.root.after(300, self.toggle_flash)
         elif key == 'p':
             self.drawing_polygon = not self.drawing_polygon
             self.polygon_points = []
@@ -362,37 +443,30 @@ class App:
                                                 "You have confirmed the last plot.\n\n"
                                                 "Are you sure you want to save the results to files?")
             if not confirm_save:
-                # Cancel the confirm so that the last plot remains active.
                 return
             else:
                 self.store_transformations(self.current_plot)
-                # Now remove the last plot since user confirmed.
                 self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
                 self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
                 self.save_files()
                 self.show_success_dialog()
         else:
-            # For all plots except the last one, process normally.
             self.store_transformations(self.current_plot)
             self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
             self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
-            # Update current plot pointer
             if self.remaining_plots:
                 self.current_plot_index = 0
                 self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
         self.update_listboxes()
 
-
     def save_files(self):
         """Save trees and transformation files."""
-        # Save transformations
         df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient='index')
         transformation_dir = './Transformations'
         if not os.path.isdir(transformation_dir):
             os.mkdir(transformation_dir)
         df_transform.to_csv(f'{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv', index=False)
 
-        # Save tree data
         if isinstance(self.plot_stand, SavedStand):
             self.plot_stand.write_out().to_csv(f'{self.plot_stand.fp}', index=False)
         else:
@@ -408,7 +482,6 @@ class App:
         tk.Label(dialog, text="Successfully saved!").pack(padx=20, pady=20)
 
         def on_show_files():
-            # Open the output folder (for example, the Trees folder)
             output_folder = os.path.abspath('./Trees')
             open_in_finder(output_folder)
             output_folder = os.path.abspath('./Transformations')
@@ -423,7 +496,6 @@ class App:
         button_frame.pack(pady=10)
         tk.Button(button_frame, text="Show files in finder", command=on_show_files).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Continue", command=on_continue).pack(side=tk.LEFT, padx=5)
-
 
     def store_transformations(self, plot, fail=False):
         R, t, flip = plot.get_transform()
@@ -491,8 +563,6 @@ class App:
     def on_closing(self):
         self.root.destroy()
         sys.exit()
-
-
 
 
 if __name__ == "__main__":
