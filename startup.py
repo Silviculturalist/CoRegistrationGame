@@ -103,6 +103,49 @@ def on_start():
     output_folder_val = output_folder_entry.get()
     file_sep_val = file_sep_var.get()
     chm_sep_val = chm_sep_var.get()
+
+    file_path_val = file_path_entry.get().strip()
+    chm_path_val = chm_path_entry.get().strip()
+    
+    # Check if the tree data file exists
+    if not os.path.exists(file_path_val):
+        messagebox.showerror("File Not Found", f"Tree data file not found:\n{file_path_val}")
+        return  # Stop further execution
+    
+    # Check if the CHM file exists
+    if not os.path.exists(chm_path_val):
+        messagebox.showerror("File Not Found", f"CHM file not found:\n{chm_path_val}")
+        return  # Stop further execution
+    
+    if not os.path.exists(output_folder_val):
+        messagebox.showerror("Folder Not Found", f"Output folder path not found:\n{output_folder_val}")
+        return  # Stop further execution
+
+
+
+    #Check to avoid overwriting files.
+    # Construct the filenames for the trees and transformation files
+    trees_filename = f"Stand_{id_val}_trees.csv"
+    trans_filename = f"Stand_{id_val}_transformation.csv"
+    trees_filepath = os.path.join(output_folder_val, trees_filename)
+    trans_filepath = os.path.join('./Transformations', trans_filename)
+
+    # Check if files exist and the checkbox is not checked
+    if not allow_overwrite_var.get() and (os.path.exists(trees_filepath) or os.path.exists(trans_filepath)):
+        files_at_risk = []
+        if os.path.exists(trees_filepath):
+            files_at_risk.append(trees_filepath)
+        if os.path.exists(trans_filepath):
+            files_at_risk.append(trans_filepath)
+        warning_message = (
+            "Overwrite Warning:\n\n"
+            "The following file(s) already exist and will be overwritten:\n"
+            + "\n".join(files_at_risk)
+            + "\n\nPlease either check the 'Allow overwriting existing files' box or change the Stand ID to a unique value."
+        )
+        messagebox.showerror("Overwrite Warning", warning_message)
+        return  # Do not start the program
+
     
     file_column_mapping = {
         'StandID': file_mapping_vars['StandID'].get(),
@@ -158,22 +201,12 @@ def select_output_folder():
     if output_folder:
         output_folder_entry.delete(0, tk.END)
         output_folder_entry.insert(0, output_folder)
-        check_file_existence()
 
 def on_file_sep_change(*args):
     update_column_options(file_path_entry.get(), file_sep_var.get(), file_comboboxes, file_mapping_vars)
 
 def on_chm_sep_change(*args):
     update_column_options(chm_path_entry.get(), chm_sep_var.get(), chm_comboboxes, chm_mapping_vars)
-
-def check_file_existence(*args):
-    id_val = id_entry.get()
-    output_folder_val = output_folder_entry.get()
-    if id_val and output_folder_val:
-        filename = f'Stand_{id_val}_trees.csv'
-        filepath = os.path.join(output_folder_val, filename)
-        if os.path.exists(filepath):
-            messagebox.showwarning("File Exists", f"File already exists. Will overwrite: {filename}")
 
 def on_closing():
     root.destroy()
@@ -190,7 +223,14 @@ root.protocol("WM_DELETE_WINDOW", on_closing)
 ttk.Label(root, text="ID:").grid(column=0, row=0, padx=10, pady=5)
 id_entry = ttk.Entry(root)
 id_entry.grid(column=1, row=0, padx=10, pady=5)
-id_entry.bind("<KeyRelease>", check_file_existence)
+# Create a BooleanVar to track if overwriting is allowed (default False)
+allow_overwrite_var = tk.BooleanVar(value=False)
+
+# Add a checkbutton for allowing overwrite in the output folder frame
+overwrite_frame = ttk.Frame(root)
+overwrite_frame.grid(column=0, row=7, columnspan=2, pady=5, sticky="w")
+ttk.Checkbutton(overwrite_frame, text="Allow overwriting existing files", variable=allow_overwrite_var).pack(side=tk.LEFT)
+
 
 # File Path Frame
 file_path_frame = ttk.LabelFrame(root, text="Tree Data File Path")
