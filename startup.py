@@ -116,6 +116,11 @@ def on_start():
     if not os.path.exists(chm_path_val):
         messagebox.showerror("File Not Found", f"CHM file not found:\n{chm_path_val}")
         return  # Stop further execution
+    
+    if not os.path.exists(output_folder_val):
+        messagebox.showerror("Folder Not Found", f"Output folder path not found:\n{output_folder_val}")
+        return  # Stop further execution
+
 
 
     #Check to avoid overwriting files.
