@@ -198,10 +198,9 @@ class App:
                     draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
                              alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
                     for i, plot in enumerate(self.plot_stand.plots):
-                        if i != self.current_plot_index:
-                            draw_plot(screen=self.screen, tree_scale=self.tree_scale, plot=plot, alpha=1,
-                                      stand_center=self.stand_center, scale_factor=self.scale_factor, 
-                                      screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
+                        draw_plot(screen=self.screen, tree_scale=self.tree_scale, plot=plot, alpha=1,
+                                    stand_center=self.stand_center, scale_factor=self.scale_factor, 
+                                    screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
 
             if self.current_plot:
                 draw_plot(self.screen, self.tree_scale, self.current_plot, 1, self.stand_center, self.scale_factor, self.screen_size, tree_component=True)
