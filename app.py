@@ -9,7 +9,7 @@ from pynput import keyboard
 import pandas as pd
 import numpy as np
 from copy import deepcopy
-
+import time
 # Import custom modules
 from trees import Stand, SavedStand
 from chm_plot import CHMPlot, SavedPlot, PlotCenters, to_screen_coordinates, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
@@ -30,8 +30,12 @@ class App:
         self.plot_stand = plot_stand
         self.chm_stand = chm_stand
         self.plot_centers = plot_centers
-
-        self.flash_trees = False
+        self.last_space_press = None
+        self.display_mode = 0
+        # Display Mode
+        # 0 = show all trees 
+        # 1 = show only unmatched trees
+        # 2 = show end result (both layers together).
         self.current_plot_index = 0
         self.remaining_plots = list(range(len(plot_stand.plots)))
         self.completed_plots = []
@@ -179,12 +183,25 @@ class App:
                     self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE)
                     self.scale_factor = get_viewport_scale(self.plot_stand, self.screen_size)
             self.screen.fill((255, 255, 255))
-            if self.chm_stand.trees and not self.flash_trees:
-                draw_chm(self.chm_stand.trees, self.screen, self.tree_scale, 1, self.stand_center, self.scale_factor, self.screen_size, tree_component=True)
-            elif self.chm_stand.trees and self.flash_trees:
-                draw_chm(self.chm_stand.alltrees, self.screen, self.tree_scale, 1, self.stand_center, self.scale_factor, self.screen_size, tree_component=True)
-                if self.plot_centers is not None:
-                    self.plot_centers.draw_centers(self.screen, (255, 0, 0), 1, self.stand_center, self.scale_factor, self.screen_size)
+            # if self.chm_stand.trees
+            if self.chm_stand.trees: 
+                if self.display_mode == 0:
+                    # Draw all trees.
+                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
+                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
+                elif self.display_mode == 1:
+                    # Draw only unmatched trees (assume CHMStand.trees holds unmatched trees).
+                    draw_chm(stems=self.chm_stand.trees, screen=self.screen, tree_scale=self.tree_scale, 
+                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
+                elif self.display_mode == 2:
+                    # Draw the end result: both matched and unmatched trees.
+                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
+                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
+                    for i, plot in enumerate(self.plot_stand.plots):
+                        draw_plot(screen=self.screen, tree_scale=self.tree_scale, plot=plot, alpha=1,
+                                    stand_center=self.stand_center, scale_factor=self.scale_factor, 
+                                    screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
+
             if self.current_plot:
                 draw_plot(self.screen, self.tree_scale, self.current_plot, 1, self.stand_center, self.scale_factor, self.screen_size, tree_component=True)
             if self.drawing_polygon:
@@ -207,7 +224,18 @@ class App:
         elif key == 'j':
             self.join_plot()
         elif key == 'space':
-            self.toggle_flash()
+            now = time.time()
+            if self.last_space_press and (now-self.last_space_press < 0.3):
+                if self.display_mode == 2:
+                    self.display_mode = 0 #revert to default
+                else:
+                    self.display_mode = 2
+                self.last_space_press = None #reset
+            else:
+                #Record this press and wait briefly to decide if it's single our double.
+                self.last_space_press = now
+                self.root.after(300,self.toggle_flash)
+
         elif key == 'p':
             self.drawing_polygon = not self.drawing_polygon
             self.polygon_points = []
@@ -251,7 +279,14 @@ class App:
             self.scale_factor = max(0.01, (1 - self.zoom_step) * self.scale_factor)
 
     def toggle_flash(self):
-        self.flash_trees = not self.flash_trees
+        # If last_space_press is still set, then no second press was received.
+        if self.last_space_press:
+            # Toggle between display modes 0 and 1.
+            if self.display_mode == 0:
+                self.display_mode = 1
+            elif self.display_mode == 1:
+                self.display_mode = 0
+            self.last_space_press = None
 
     def shift_plot(self, direction):
         if direction == 'up':
