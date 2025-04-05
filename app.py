@@ -437,26 +437,31 @@ class App:
         self.update_listboxes()
 
     def confirm_plot(self):
-        # If we're on the last plot, ask for confirmation before removal.
+        # Check if we're on the last plot and confirm before final saving.
         if len(self.remaining_plots) == 1:
             confirm_save = messagebox.askyesno("Confirm Save",
-                                                "You have confirmed the last plot.\n\n"
-                                                "Are you sure you want to save the results to files?")
+                                            "You have confirmed the last plot.\n\n"
+                                            "Are you sure you want to save the results to files?")
             if not confirm_save:
                 return
             else:
                 self.store_transformations(self.current_plot)
-                self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
+                if self.current_plot_index in self.remaining_plots:
+                    idx_in_queue = self.remaining_plots.index(self.current_plot_index)
+                    self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
                 self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
                 self.save_files()
                 self.show_success_dialog()
         else:
             self.store_transformations(self.current_plot)
-            self.completed_plots.append(self.remaining_plots.pop(self.current_plot_index))
+            if self.current_plot_index in self.remaining_plots:
+                idx_in_queue = self.remaining_plots.index(self.current_plot_index)
+                self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
             self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
             if self.remaining_plots:
-                self.current_plot_index = 0
-                self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
+                # Set the current plot to the first index in the remaining queue.
+                self.current_plot_index = self.remaining_plots[0]
+                self.current_plot = self.plot_stand.plots[self.current_plot_index]
         self.update_listboxes()
 
     def save_files(self):
@@ -532,37 +537,179 @@ class App:
         self.update_listboxes()
 
     def new_plot_from_polygon(self):
-        if self.polygon_points:
+        PolygonDrawingWindow(self)
+
+    def on_polygon_confirmed(self, polygon_points):
+        if polygon_points:
             trees_to_move = []
+            affected_plots = set()
+            # Identify trees to move from any plot whose tree falls within the polygon.
             for plot in self.plot_stand.plots:
-                for tree in plot.trees:
-                    tree_pos = to_screen_coordinates((tree.currentx, tree.currenty), self.stand_center, self.scale_factor, self.screen_size)
-                    if is_point_in_polygon(tree_pos, self.polygon_points):
-                        logging.info(f"Tree {tree.tree_id} is inside polygon")
-                        tree.original_plot = plot
+                # Iterate over a shallow copy to safely remove trees.
+                for tree in plot.trees[:]:
+                    if is_point_in_polygon((tree.currentx, tree.currenty), polygon_points):
+                        logging.info(f"Tree {tree.tree_id} from Plot {plot.plotid} is inside polygon")
                         trees_to_move.append((tree, plot))
-            if self.plot_stand.plots:
-                new_plot_id = max(p.plotid for p in self.plot_stand.plots) + 1
-            else:
-                new_plot_id = 1
-            from trees import Plot  # Import here to avoid circular dependency
-            new_plot = Plot(new_plot_id, center=np.mean(np.array(self.polygon_points), axis=0))
+                        affected_plots.add(plot)
+            # Determine the new plot ID.
+            new_plot_id = max(p.plotid for p in self.plot_stand.plots) + 1 if self.plot_stand.plots else 1
+            from trees import Plot  # Avoid circular dependency.
+            new_center = np.mean(np.array(polygon_points), axis=0)
+            new_plot = Plot(new_plot_id, center=new_center)
+            # Move trees into the new plot.
             for tree, plot in trees_to_move:
                 logging.info(f"Removing Tree {tree.tree_id} from Plot {plot.plotid}")
                 plot.trees.remove(tree)
                 new_plot.append_tree(tree)
+            # For each affected plot, check if it has become empty.
+            empty_plots = []
+            for plot in affected_plots:
+                if len(plot.trees) == 0:
+                    # Record transformation for the now-empty plot.
+                    self.store_transformations(plot, fail=False)
+                    empty_plots.append(plot)
+            # Remove any empty plots from the stand and update the remaining plots list.
+            for empty_plot in empty_plots:
+                if empty_plot in self.plot_stand.plots:
+                    index = self.plot_stand.plots.index(empty_plot)
+                    self.plot_stand.plots.remove(empty_plot)
+                    if index in self.remaining_plots:
+                        self.remaining_plots.remove(index)
+                    logging.info(f"Removed empty Plot {empty_plot.plotid}")
+            # Add the new plot to the stand.
             self.plot_stand.add_plot(new_plot)
             logging.info(f"Added new Plot with ID {new_plot.plotid}")
             self.new_plots.append(new_plot)
-            self.remaining_plots.append(self.current_plot_index)
-            self.current_plot_index = len(self.plot_stand.plots) - 1
+            # Optionally, you could immediately record a transformation for the original plot(s)
+            # if you want to capture the pre-split state. That way, you know which trees left plot 16.
+            for plot in affected_plots:
+                if plot not in empty_plots:
+                    self.store_transformations(plot)
+            # Update the plot queue: set the new plot as the current plot.
+            new_index = len(self.plot_stand.plots) - 1
+            if self.current_plot_index in self.remaining_plots:
+                self.remaining_plots.remove(self.current_plot_index)
+            self.remaining_plots.insert(0, new_index)
+            self.current_plot_index = new_index
             self.current_plot = new_plot
-            self.polygon_points = []
             self.update_listboxes()
+
+
 
     def on_closing(self):
         self.root.destroy()
         sys.exit()
+
+
+
+# Canvas drawing polygon
+class PolygonDrawingWindow:
+    def __init__(self, parent_app):
+        self.parent_app = parent_app
+        self.root = tk.Toplevel(parent_app.root)
+        self.root.title("Polygon Drawing")
+        self.canvas_width = 800
+        self.canvas_height = 600
+        self.canvas = tk.Canvas(self.root, width=self.canvas_width, height=self.canvas_height, bg="white")
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Initialize viewport parameters using the parent's current values.
+        self.center = parent_app.stand_center  # geo coordinates (x,y)
+        self.scale = parent_app.scale_factor     # pixels per meter (or similar unit)
+        
+        self.polygon_points = []  # stored as geo coordinates
+        
+        # Bind mouse events:
+        self.canvas.bind("<Button-1>", self.on_left_click)             # left-click to add a point
+        self.canvas.bind("<Button-3>", self.on_right_click)            # right-click to remove the last point
+        self.canvas.bind("<Shift-Button-3>", self.on_shift_right_click)  # shift-right-click to remove the closest point
+        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)          # mouse wheel to zoom
+        
+        # Confirm and Cancel buttons (and keyboard 'C' for confirm)
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        confirm_btn = tk.Button(btn_frame, text="Confirm (C)", command=self.confirm)
+        confirm_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        cancel_btn = tk.Button(btn_frame, text="Cancel", command=self.cancel)
+        cancel_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        self.root.bind("c", lambda event: self.confirm())
+        
+        self.draw()
+
+    def geo_to_canvas(self, geo_point):
+        """Convert geo coordinates to canvas coordinates."""
+        canvas_x = (geo_point[0] - self.center[0]) * self.scale + self.canvas_width / 2
+        canvas_y = (geo_point[1] - self.center[1]) * self.scale + self.canvas_height / 2
+        return (canvas_x, canvas_y)
+
+    def canvas_to_geo(self, x, y):
+        """Convert canvas coordinates to geo coordinates."""
+        geo_x = (x - self.canvas_width / 2) / self.scale + self.center[0]
+        geo_y = (y - self.canvas_height / 2) / self.scale + self.center[1]
+        return (geo_x, geo_y)
+
+    def draw(self):
+        """Redraw the canvas contents."""
+        self.canvas.delete("all")
+        # Draw all Layer 2 trees from the CHM (use a small circle for each)
+        for tree in self.parent_app.chm_stand.trees:
+            x, y = self.geo_to_canvas((tree.currentx, tree.currenty))
+            r = 3
+            self.canvas.create_oval(x - r, y - r, x + r, y + r, fill="gray", outline="gray")
+        
+        # Draw the polygon (lines connecting the points)
+        if len(self.polygon_points) > 1:
+            canvas_points = [self.geo_to_canvas(pt) for pt in self.polygon_points]
+            # Draw polygon lines
+            flat_points = [coord for point in canvas_points for coord in point]
+            self.canvas.create_line(*flat_points, fill="green", width=2)
+        # Draw each vertex as a small circle with a green border
+        for pt in self.polygon_points:
+            cx, cy = self.geo_to_canvas(pt)
+            r = 5
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="white", outline="green", width=2)
+
+    def on_left_click(self, event):
+        # Left-click: add a new point.
+        geo_pt = self.canvas_to_geo(event.x, event.y)
+        self.polygon_points.append(geo_pt)
+        # Auto-center on the new point.
+        #self.center = geo_pt
+        self.draw()
+
+    def on_right_click(self, event):
+        # Right-click: remove the last point.
+        if self.polygon_points:
+            self.polygon_points.pop()
+            self.draw()
+
+    def on_shift_right_click(self, event):
+        # Shift-right-click: remove the point closest to the mouse.
+        if not self.polygon_points:
+            return
+        geo_pt = self.canvas_to_geo(event.x, event.y)
+        distances = [((pt[0] - geo_pt[0]) ** 2 + (pt[1] - geo_pt[1]) ** 2) ** 0.5 for pt in self.polygon_points]
+        min_index = distances.index(min(distances))
+        self.polygon_points.pop(min_index)
+        self.draw()
+
+    def on_mouse_wheel(self, event):
+        # Adjust zoom factor.
+        if event.delta > 0:
+            self.scale *= 1.1
+        else:
+            self.scale /= 1.1
+        self.draw()
+
+    def confirm(self):
+        # Pass the polygon points back to the main application.
+        self.parent_app.on_polygon_confirmed(self.polygon_points)
+        self.root.destroy()
+
+    def cancel(self):
+        self.root.destroy()
+
+
 
 
 if __name__ == "__main__":
