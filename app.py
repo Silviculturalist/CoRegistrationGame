@@ -39,9 +39,10 @@ ZOOM_STEP = 0.3
 TREE_SCALE_INITIAL = 1.0
 
 class App:
-    def __init__(self, root, plot_stand, chm_stand, plot_centers):
+    def __init__(self, root, plot_stand, chm_stand, plot_centers, startup_root= None):
         self.root = root
         self.window_active = True  # assume active initially
+        self.startup_root = startup_root #To restore reference to startup menu.
         # Bind both tkinter focus events (in case the overall app loses focus)
         self.root.bind("<FocusIn>", self.on_focus_in)
         self.root.bind("<FocusOut>", self.on_focus_out)
@@ -220,13 +221,16 @@ class App:
             self.update_listboxes()
 
     def run_pygame(self):
-        os.environ['SDL_WINDOWID'] = str(self.pygame_frame.winfo_id())
+     
         os.environ['SDL_VIDEODRIVER'] = 'windib'
         pygame.init()
             # Create a font for flash messages.
         self.font = pygame.font.SysFont(None, 36)
         self.screen_size = (800, 600)
         self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE | pygame.HWSURFACE | pygame.DOUBLEBUF)
+
+        self.root.lower() #Send tk window to back
+
         self.running = True
         # Start the listener initially.
         self.start_listener()
@@ -488,6 +492,13 @@ class App:
         tk.Label(dialog, text="Successfully saved!").pack(padx=20, pady=20)
 
         def on_show_files():
+            dialog.destroy()
+            #Stop game running
+            self.running = False
+            # Quit pygame
+            pygame.quit()
+            # Close game window
+            self.root.destroy()  
             output_folder = os.path.abspath('./Trees')
             open_in_finder(output_folder)
             output_folder = os.path.abspath('./Transformations')
@@ -496,11 +507,19 @@ class App:
 
         def on_continue():
             dialog.destroy()
-            self.on_closing()
+            #Stop game running
+            self.running = False
+            # Quit pygame
+            pygame.quit()
+            # Close game window
+            self.root.destroy()  
+            # Relaunch the startup menu in a new process
+            if self.startup_root is not None:
+                self.startup_root.deiconify()
 
         button_frame = tk.Frame(dialog)
         button_frame.pack(pady=10)
-        tk.Button(button_frame, text="Show files in finder", command=on_show_files).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Exit and show files in finder", command=on_show_files).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Continue", command=on_continue).pack(side=tk.LEFT, padx=5)
 
     def store_transformations(self, plot, fail=False):

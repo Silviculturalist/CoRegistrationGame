@@ -54,6 +54,15 @@ def plot_params_graph(*args):
     except ValueError:
         pass
 
+def bring_window_to_front(window):
+    try:
+        window.lift()
+        window.focus_force()
+        window.attributes("-topmost", True)
+        window.after(500, lambda: window.attributes("-topmost", False))
+    except Exception as e:
+        logging.error(f"Error bringing window to front: {e}")
+
 def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mapping, 
                   file_sep, chm_sep, file_calculate_dbh, file_calculate_h, 
                   chm_calculate_dbh, chm_calculate_h, params, output_folder):
@@ -70,9 +79,17 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
 
     MyPlotCenters = PlotCenters(MyData)
     
+    # Create a new Toplevel window for the main application.
+    main_window = tk.Toplevel(root)
+    main_window.title("Co-Registration Game")
+    
+    # Create your App instance using the new window.
     from app import App
-    root = tk.Tk()
-    app = App(root, MyData, MyCHM, MyPlotCenters)
+    app = App(main_window, MyData, MyCHM, MyPlotCenters)
+    
+    main_window.after(100, lambda: bring_window_to_front(window=main_window))
+
+    # Start the main event loop.
     root.mainloop()
 
 
