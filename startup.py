@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from scipy.optimize import minimize_scalar
-
+import logging
 # Import the new modular components:
 from trees import Stand, SavedStand
 from chm_plot import CHMPlot, SavedPlot, PlotCenters, plot_height_curve
@@ -26,11 +26,12 @@ def update_column_options(file_path, sep, comboboxes, mapping_vars):
     if file_path.endswith('.csv'):
         try:
             df = pd.read_csv(file_path, sep=sep)
-            columns = df.columns.tolist()
-            # Reset mapping variables
+            # Prepend an empty option to allow clearing the selection.
+            columns = [''] + df.columns.tolist()
+            # Reset mapping variables to blank.
             for var in mapping_vars:
                 mapping_vars[var].set('')
-            # Update each combobox with the file columns
+            # Update each combobox with the file columns plus a blank option.
             for combobox in comboboxes.values():
                 combobox['values'] = columns
         except Exception as e:
@@ -148,7 +149,6 @@ def on_start():
 
     
     file_column_mapping = {
-        'StandID': file_mapping_vars['StandID'].get(),
         'PlotID': file_mapping_vars['PlotID'].get(),
         'TreeID': file_mapping_vars['TreeID'].get(),
         'X': file_mapping_vars['X'].get(),
@@ -158,7 +158,6 @@ def on_start():
     }
 
     chm_column_mapping = {
-        'StandID': chm_mapping_vars['StandID'].get(),
         'PlotID': chm_mapping_vars['PlotID'].get(),
         'TreeID': chm_mapping_vars['TreeID'].get(),
         'X': chm_mapping_vars['X'].get(),
@@ -166,6 +165,27 @@ def on_start():
         'DBH': chm_mapping_vars['DBH'].get(),
         'H': chm_mapping_vars['H'].get()
     }
+
+    # Define the required fields
+    required_fields = ['PlotID', 'TreeID', 'X', 'Y']
+
+    # Validate file mapping for the Tree Data File
+    for field in required_fields:
+        if file_column_mapping[field] == "":
+            messagebox.showerror("Missing Column", f"Required column '{field}' is not mapped in the Tree Data File.")
+            return
+    if file_column_mapping['DBH'] == "" and file_column_mapping['H'] == "":
+        messagebox.showerror("Missing Column", "At least one of 'DBH' or 'H' must be mapped in the Tree Data File.")
+        return
+
+    # Validate CHM mapping for the CHM Data File
+    for field in required_fields:
+        if chm_column_mapping[field] == "":
+            messagebox.showerror("Missing Column", f"Required column '{field}' is not mapped in the CHM Data File.")
+            return
+    if chm_column_mapping['DBH'] == "" and chm_column_mapping['H'] == "":
+        messagebox.showerror("Missing Column", "At least one of 'DBH' or 'H' must be mapped in the CHM Data File.")
+        return
     
     file_calculate_dbh = file_dbh_calc_var.get()
     file_calculate_h = file_h_calc_var.get()
@@ -249,9 +269,9 @@ file_sep_combobox.grid(column=1, row=1, padx=10, pady=5)
 file_sep_combobox.bind('<<ComboboxSelected>>', on_file_sep_change)
 
 # Mapping variables for tree file columns
-file_mapping_vars = {label: tk.StringVar() for label in ['StandID', 'PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
+file_mapping_vars = {label: tk.StringVar() for label in ['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
 file_comboboxes = {}
-for i, label in enumerate(['StandID', 'PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
+for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
     ttk.Label(file_path_frame, text=label).grid(column=0, row=i+2, padx=5, pady=2)
     file_comboboxes[label] = ttk.Combobox(file_path_frame, textvariable=file_mapping_vars[label], state="readonly")
     file_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
@@ -282,9 +302,9 @@ chm_sep_combobox.grid(column=1, row=1, padx=10, pady=5)
 chm_sep_combobox.bind('<<ComboboxSelected>>', on_chm_sep_change)
 
 # Mapping variables for CHM file columns
-chm_mapping_vars = {label: tk.StringVar() for label in ['StandID', 'PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
+chm_mapping_vars = {label: tk.StringVar() for label in ['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
 chm_comboboxes = {}
-for i, label in enumerate(['StandID', 'PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
+for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
     ttk.Label(chm_path_frame, text=label).grid(column=0, row=i+2, padx=5, pady=2)
     chm_comboboxes[label] = ttk.Combobox(chm_path_frame, textvariable=chm_mapping_vars[label], state="readonly")
     chm_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
