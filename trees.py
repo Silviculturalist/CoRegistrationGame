@@ -124,17 +124,19 @@ class Plot:
         self.current_translation = [0, 0]
         self.current_rotation = 0
 
+    def get_tree_source_array(self):
+        """Return an array of [tree_id, x, y, height] for trees."""
+        if not self.trees:
+            return np.empty((0, 4))
+        return np.array([[tree.tree_id, tree.x, tree.y, tree.height] for tree in self.trees])
+
     def get_tree_current_array(self):
-        """
-        Return an array of [tree_id, currentx, currenty, height] for trees.
-        """
+        """Return an array of [tree_id, currentx, currenty, height] for trees."""
+        if not self.trees:
+           return np.empty((0, 4))
         return np.array([[tree.tree_id, tree.currentx, tree.currenty, tree.height] for tree in self.trees])
 
-    def get_tree_source_array(self):
-        """
-        Return an array of [tree_id, x, y, height] for trees.
-        """
-        return np.array([[tree.tree_id, tree.x, tree.y, tree.height] for tree in self.trees])
+
 
     def get_transform(self):
         source_array = self.get_tree_source_array()[:, 1:3]

@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 from copy import deepcopy
 import time
+import random
 # Import custom modules
 from trees import Stand, SavedStand
 from chm_plot import CHMPlot, SavedPlot, PlotCenters, to_screen_coordinates, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
@@ -503,6 +504,16 @@ class App:
         tk.Button(button_frame, text="Continue", command=on_continue).pack(side=tk.LEFT, padx=5)
 
     def store_transformations(self, plot, fail=False):
+        if not plot.trees:
+            # If the plot is empty, store NA values.
+            self.plot_transformations[plot.plotid] = {
+                "original_center": plot.center,
+                "final_center": pd.NA,
+                "translation": pd.NA,
+                "flip": pd.NA,
+                "rotation": pd.NA
+            }
+            return
         R, t, flip = plot.get_transform()
         if not fail:
             self.plot_transformations[plot.plotid] = {
@@ -520,6 +531,7 @@ class App:
                 "flip": pd.NA,
                 "rotation": pd.NA
             }
+
 
     def reset_plot_position(self):
         if self.current_plot:
@@ -540,67 +552,70 @@ class App:
         PolygonDrawingWindow(self)
 
     def on_polygon_confirmed(self, polygon_points):
-        if polygon_points:
-            trees_to_move = []
-            affected_plots = set()
-            # Identify trees to move from any plot whose tree falls within the polygon.
-            for plot in self.plot_stand.plots:
-                # Iterate over a shallow copy to safely remove trees.
-                for tree in plot.trees[:]:
-                    if is_point_in_polygon((tree.currentx, tree.currenty), polygon_points):
-                        logging.info(f"Tree {tree.tree_id} from Plot {plot.plotid} is inside polygon")
-                        trees_to_move.append((tree, plot))
-                        affected_plots.add(plot)
-            # Determine the new plot ID.
-            new_plot_id = max(p.plotid for p in self.plot_stand.plots) + 1 if self.plot_stand.plots else 1
-            from trees import Plot  # Avoid circular dependency.
-            new_center = np.mean(np.array(polygon_points), axis=0)
-            new_plot = Plot(new_plot_id, center=new_center)
-            # Move trees into the new plot.
-            for tree, plot in trees_to_move:
-                logging.info(f"Removing Tree {tree.tree_id} from Plot {plot.plotid}")
+        if not polygon_points:
+            return
+
+        trees_to_move = []
+        affected_plots = {}  # dictionary to count selected trees per plot
+
+        # Iterate over all plots and collect trees that fall inside the polygon.
+        for plot in self.plot_stand.plots:
+            for tree in plot.trees[:]:
+                if is_point_in_polygon((tree.currentx, tree.currenty), polygon_points):
+                    trees_to_move.append((tree, plot))
+                    affected_plots[plot] = affected_plots.get(plot, 0) + 1
+
+        # If exactly one plot is affected and all its trees are selected, do nothing.
+        if len(affected_plots) == 1:
+            for plot, count in affected_plots.items():
+                if count == len(plot.trees):
+                    logging.info(f"All trees in Plot {plot.plotid} were selected. No split will be performed.")
+                    return  # Exit without making any changes.
+
+        # Otherwise, proceed with splitting the trees into a new plot.
+        # Determine the new plot ID.
+        new_plot_id = max(p.plotid for p in self.plot_stand.plots) + 1 if self.plot_stand.plots else 1
+        from trees import Plot  # Avoid circular dependency.
+        new_center = np.mean(np.array(polygon_points), axis=0)
+        new_plot = Plot(new_plot_id, center=new_center)
+
+        # Remove selected trees from their original plots and add them to the new plot.
+        for tree, plot in trees_to_move:
+            logging.info(f"Removing Tree {tree.tree_id} from Plot {plot.plotid}")
+            if tree in plot.trees:
                 plot.trees.remove(tree)
-                new_plot.append_tree(tree)
-            # For each affected plot, check if it has become empty.
-            empty_plots = []
-            for plot in affected_plots:
-                if len(plot.trees) == 0:
-                    # Record transformation for the now-empty plot.
-                    self.store_transformations(plot, fail=False)
-                    empty_plots.append(plot)
-            # Remove any empty plots from the stand and update the remaining plots list.
-            for empty_plot in empty_plots:
-                if empty_plot in self.plot_stand.plots:
-                    index = self.plot_stand.plots.index(empty_plot)
-                    self.plot_stand.plots.remove(empty_plot)
-                    if index in self.remaining_plots:
-                        self.remaining_plots.remove(index)
-                    logging.info(f"Removed empty Plot {empty_plot.plotid}")
-            # Add the new plot to the stand.
-            self.plot_stand.add_plot(new_plot)
-            logging.info(f"Added new Plot with ID {new_plot.plotid}")
-            self.new_plots.append(new_plot)
-            # Optionally, you could immediately record a transformation for the original plot(s)
-            # if you want to capture the pre-split state. That way, you know which trees left plot 16.
-            for plot in affected_plots:
-                if plot not in empty_plots:
-                    self.store_transformations(plot)
-            # Update the plot queue: set the new plot as the current plot.
-            new_index = len(self.plot_stand.plots) - 1
-            if self.current_plot_index in self.remaining_plots:
-                self.remaining_plots.remove(self.current_plot_index)
-            self.remaining_plots.insert(0, new_index)
-            self.current_plot_index = new_index
-            self.current_plot = new_plot
-            self.update_listboxes()
+            new_plot.append_tree(tree)
 
+        # Record transformations for affected plots.
+        for plot in set([p for (_, p) in trees_to_move]):
+            self.store_transformations(plot)
 
+        # Remove any plots that have become empty.
+        self.plot_stand.plots = [p for p in self.plot_stand.plots if len(p.trees) > 0]
 
+        # Add the new plot to the stand.
+        self.plot_stand.add_plot(new_plot)
+        logging.info(f"Added new Plot with ID {new_plot.plotid}")
+        self.new_plots.append(new_plot)
+
+        # Recalculate the remaining_plots indices based on the updated plot list.
+        self.remaining_plots = [i for i, p in enumerate(self.plot_stand.plots) if len(p.trees) > 0]
+        # Set the new plot as the current plot.
+        new_index = self.plot_stand.plots.index(new_plot)
+        self.current_plot_index = new_index
+        self.current_plot = new_plot
+        self.update_listboxes()
+    
+    
     def on_closing(self):
         self.root.destroy()
         sys.exit()
 
-
+#Given an arbitrary integer as plotid
+def grey_from_plotid(plotid):
+    random.seed(plotid)  # seed with the plot id so it's deterministic
+    shade = random.randint(50, 240)  # choose a value between 50 and 240 for visibility
+    return f"#{shade:02x}{shade:02x}{shade:02x}"
 
 # Canvas drawing polygon
 class PolygonDrawingWindow:
@@ -649,25 +664,30 @@ class PolygonDrawingWindow:
         return (geo_x, geo_y)
 
     def draw(self):
-        """Redraw the canvas contents."""
+        '''Redraw the canvas contents'''
         self.canvas.delete("all")
-        # Draw all Layer 2 trees from the CHM (use a small circle for each)
-        for tree in self.parent_app.chm_stand.trees:
-            x, y = self.geo_to_canvas((tree.currentx, tree.currenty))
-            r = 3
-            self.canvas.create_oval(x - r, y - r, x + r, y + r, fill="gray", outline="gray")
-        
-        # Draw the polygon (lines connecting the points)
+        # Draw all Layer 1 trees (from every plot)
+        all_plots = self.parent_app.plot_stand.plots
+        for plot in all_plots:
+            color = grey_from_plotid(plot.plotid)
+            for tree in plot.trees:
+                pos = self.geo_to_canvas((tree.currentx, tree.currenty))
+                # Use the same scaling as in the main window:
+                r = max(int(tree.stemdiam * 10 * self.scale / 2), 1) * self.parent_app.tree_scale
+                self.canvas.create_oval(pos[0]-r, pos[1]-r, pos[0]+r, pos[1]+r,
+                                         fill=color, outline=color)
+        # Draw the polygon (if any) on top.
         if len(self.polygon_points) > 1:
             canvas_points = [self.geo_to_canvas(pt) for pt in self.polygon_points]
-            # Draw polygon lines
             flat_points = [coord for point in canvas_points for coord in point]
             self.canvas.create_line(*flat_points, fill="green", width=2)
-        # Draw each vertex as a small circle with a green border
+        # Draw each vertex with a green border.
         for pt in self.polygon_points:
             cx, cy = self.geo_to_canvas(pt)
             r = 5
-            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="white", outline="green", width=2)
+            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
+                                    fill="white", outline="green", width=2)
+
 
     def on_left_click(self, event):
         # Left-click: add a new point.
