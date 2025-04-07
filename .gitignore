@@ -6,4 +6,7 @@ __pycache__/
 # Ignore output directories
 /Transformations/
 /Trees/
+
 /Codebrowser
+CoRegGameEnv/
+
