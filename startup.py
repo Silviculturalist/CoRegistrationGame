@@ -82,15 +82,12 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
     # Create a new Toplevel window for the main application.
     main_window = tk.Toplevel(root)
     main_window.title("Co-Registration Game")
-    
+    root.withdraw() # Hide the startup menu.
     # Create your App instance using the new window.
     from app import App
-    app = App(main_window, MyData, MyCHM, MyPlotCenters)
+    app = App(main_window, MyData, MyCHM, MyPlotCenters,startup_root=root)
     
-    main_window.after(100, lambda: bring_window_to_front(window=main_window))
 
-    # Start the main event loop.
-    root.mainloop()
 
 
 def toggle_file_impute_dbh():

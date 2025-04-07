@@ -129,16 +129,41 @@ class App:
         self.event_queue.put(('release', key_val))
 
     def process_queue(self):
+        # --- Start Change ---
+        # Check if the root window (Toplevel) associated with this App instance still exists.
+        # If not, don't process the queue and don't reschedule.
+        if not self.root or not self.root.winfo_exists():
+             logging.debug("process_queue: Root window destroyed, stopping queue processing.")
+             self.after_id = None # Ensure it's cleared
+             return # Stop processing
+        # --- End Change ---
+
         try:
             while True:
                 event_type, key = self.event_queue.get_nowait()
+                # Check window existence again before handling, just in case.
+                if not self.root or not self.root.winfo_exists(): break
+
                 if event_type == 'press':
                     self.handle_keydown(key)
                 elif event_type == 'release':
                     self.handle_keyup(key)
         except queue.Empty:
             pass
-        self.after_id = self.root.after(10, self.process_queue)
+        except tk.TclError as e:
+             # Catch potential errors during key handling if window is destroyed mid-process
+             logging.warning(f"process_queue: TclError during event handling (window likely destroyed): {e}")
+             self.after_id = None
+             return # Stop processing
+
+        # --- Start Change ---
+        # Only reschedule if the window still exists
+        if self.root and self.root.winfo_exists():
+            self.after_id = self.root.after(10, self.process_queue)
+        else:
+             logging.debug("process_queue: Root window destroyed, not rescheduling.")
+             self.after_id = None
+        # --- End Change ---
 
     def create_ui(self):
         control_frame = tk.Frame(self.root)
@@ -194,20 +219,52 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.after(10, self.process_queue)
 
+    
     def update_listboxes(self):
-        self.remaining_listbox.delete(0, tk.END)
-        for plot_index in self.remaining_plots:
-            plotid = self.plot_stand.plots[plot_index].plotid
-            self.remaining_listbox.insert(tk.END, plotid)
-        current_plotid = self.plot_stand.plots[self.current_plot_index].plotid
-        if current_plotid in self.remaining_listbox.get(0, tk.END):
-            idx = self.remaining_listbox.get(0, tk.END).index(current_plotid)
-            self.remaining_listbox.selection_set(idx)
-            self.remaining_listbox.see(idx)
-        self.completed_listbox.delete(0, tk.END)
-        for plot_index in self.completed_plots:
-            plotid = self.plot_stand.plots[plot_index].plotid
-            self.completed_listbox.insert(tk.END, plotid)
+        # --- Start Change ---
+        # Check if the listbox widgets still exist before trying to modify them
+        if not self.remaining_listbox or not self.remaining_listbox.winfo_exists():
+            logging.warning("update_listboxes: Remaining listbox does not exist. Aborting update.")
+            return
+        if not self.completed_listbox or not self.completed_listbox.winfo_exists():
+            logging.warning("update_listboxes: Completed listbox does not exist. Aborting update.")
+            return
+        # --- End Change ---
+
+        try:
+            self.remaining_listbox.delete(0, tk.END)
+            for plot_index in self.remaining_plots:
+                # Check listbox existence again before inserting
+                if not self.remaining_listbox.winfo_exists(): break
+                plotid = self.plot_stand.plots[plot_index].plotid
+                self.remaining_listbox.insert(tk.END, plotid)
+
+            # Check existence before proceeding
+            if not self.remaining_listbox.winfo_exists(): return
+
+            current_plotid = self.plot_stand.plots[self.current_plot_index].plotid
+            listbox_items = self.remaining_listbox.get(0, tk.END)
+            if current_plotid in listbox_items:
+                 idx = listbox_items.index(current_plotid)
+                 # Check existence before selection/see
+                 if self.remaining_listbox.winfo_exists():
+                     self.remaining_listbox.selection_clear(0, tk.END) # Clear selection first
+                     self.remaining_listbox.selection_set(idx)
+                     self.remaining_listbox.see(idx)
+
+            # Check existence before deleting/inserting into completed listbox
+            if not self.completed_listbox.winfo_exists(): return
+
+            self.completed_listbox.delete(0, tk.END)
+            for plot_index in self.completed_plots:
+                 if not self.completed_listbox.winfo_exists(): break
+                 plotid = self.plot_stand.plots[plot_index].plotid
+                 self.completed_listbox.insert(tk.END, plotid)
+
+        except tk.TclError as e:
+            logging.error(f"Error updating listboxes (likely window destroyed): {e}")
+
+
 
     def on_remaining_plot_select(self, event):
         selection = event.widget.curselection()
@@ -486,41 +543,130 @@ class App:
             self.plot_stand.write_out().to_csv(f'{tree_dir}/Stand_{self.plot_stand.standid}_trees.csv', index=False)
 
     def show_success_dialog(self):
-        """Show a dialog after a successful save with options to open folder or continue."""
+        """Show a dialog after a successful save with options to show files, continue, or exit."""
+        logging.info("Showing success dialog.")
         dialog = tk.Toplevel(self.root)
         dialog.title("Successfully saved!")
-        tk.Label(dialog, text="Successfully saved!").pack(padx=20, pady=20)
 
-        def on_show_files():
-            dialog.destroy()
-            #Stop game running
-            self.running = False
-            # Quit pygame
-            pygame.quit()
-            # Close game window
-            self.root.destroy()  
-            output_folder = os.path.abspath('./Trees')
-            open_in_finder(output_folder)
-            output_folder = os.path.abspath('./Transformations')
-            open_in_finder(output_folder)
-            dialog.destroy()
+        # Make the dialog modal
+        dialog.grab_set()
+        dialog.transient(self.root)
 
-        def on_continue():
-            dialog.destroy()
-            #Stop game running
-            self.running = False
-            # Quit pygame
-            pygame.quit()
-            # Close game window
-            self.root.destroy()  
-            # Relaunch the startup menu in a new process
-            if self.startup_root is not None:
-                self.startup_root.deiconify()
+        # --- Define Button Actions ---
 
-        button_frame = tk.Frame(dialog)
-        button_frame.pack(pady=10)
-        tk.Button(button_frame, text="Exit and show files in finder", command=on_show_files).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Continue", command=on_continue).pack(side=tk.LEFT, padx=5)
+        def do_show_files():
+            """Opens the output folders without closing the dialog."""
+            logging.info("Show Files button clicked.")
+            output_folder_trees = os.path.abspath('./Trees')
+            output_folder_trans = os.path.abspath('./Transformations')
+            logging.info(f"Opening folders: {output_folder_trees}, {output_folder_trans}")
+            try:
+                # Ensure open_in_finder is defined/imported if used
+                open_in_finder(output_folder_trees)
+                open_in_finder(output_folder_trans)
+            except Exception as e:
+                logging.error(f"Error opening folders: {e}")
+                messagebox.showerror("Error", f"Could not open folders:\n{e}", parent=dialog)
+
+        def do_continue():
+            """Closes this dialog and calls the main on_closing handler
+            to return to the startup menu."""
+            logging.info("Continue button clicked.")
+            try:
+                dialog.destroy() # Close this dialog first
+            except tk.TclError as e:
+                logging.warning(f"Error destroying success dialog (Continue): {e}")
+            # This should trigger cleanup and show startup menu
+            self.on_closing()
+
+        def do_exit():
+            """Closes this dialog, cleans up, and terminates the entire application gracefully."""
+            logging.info("Exit button clicked. Terminating application.")
+            try:
+                # Ensure the dialog variable exists and the window exists before destroying
+                if 'dialog' in locals() and isinstance(dialog, tk.Toplevel) and dialog.winfo_exists():
+                    dialog.destroy()
+            except tk.TclError as e:
+                logging.warning(f"Error destroying success dialog (Exit): {e}")
+
+            # Cancel the pending process_queue call
+            if self.after_id:
+                try:
+                    # Check if the Toplevel window (self.root) still exists before cancelling
+                    if self.root and self.root.winfo_exists():
+                        self.root.after_cancel(self.after_id)
+                        logging.info("Pending 'after' call cancelled (Exit).")
+                    else:
+                        logging.info("App Toplevel window already gone, cannot cancel 'after' (Exit).")
+                except tk.TclError as e:
+                    logging.warning(f"Error cancelling 'after' during exit: {e}")
+                self.after_id = None
+
+            self.running = False # Stop pygame loop variable if checked elsewhere
+
+            # Attempt to quit Pygame
+            try:
+                pygame.quit()
+                logging.info("Pygame quit successfully (Exit).")
+            except pygame.error as e:
+                logging.warning(f"Pygame quit error during exit: {e}")
+
+            # Attempt to destroy the main app window (Toplevel)
+            try:
+                if self.root and self.root.winfo_exists():
+                    self.root.destroy()
+                    logging.info("App Toplevel window destroyed (Exit).")
+            except tk.TclError as e:
+                logging.warning(f"Error destroying App Toplevel window during exit: {e}")
+
+            # --- Start Change ---
+            # Attempt to gracefully QUIT the main Tkinter loop via the startup_root.
+            # DO NOT destroy startup_root here - let the mainloop handle it upon exit.
+            try:
+                if self.startup_root and self.startup_root.winfo_exists():
+                    logging.info("Quitting Tkinter main loop via startup_root...")
+                    self.startup_root.quit() # Signal mainloop in startup.py to exit cleanly
+                else:
+                    # If startup_root is already gone for some reason, we must force exit
+                    logging.warning("Startup root invalid or destroyed before quit signal. Forcing exit.")
+                    sys.exit()
+            except tk.TclError as e:
+                 # Catch error if quit fails unexpectedly
+                 logging.warning(f"Error quitting main loop via startup_root: {e}. Forcing exit.")
+                 sys.exit()
+
+        # --- Configure Dialog Close Button ---
+        # Make the 'X' button behave like the Exit button
+        dialog.protocol("WM_DELETE_WINDOW", do_exit)
+
+        # --- Create and Layout Widgets ---
+
+        tk.Label(dialog, text="Files saved successfully!").pack(padx=20, pady=(20, 10))
+
+        frame_row1 = tk.Frame(dialog)
+        frame_row1.pack(pady=(5, 5))
+        show_files_button = tk.Button(frame_row1, text="Show Files", command=do_show_files)
+        show_files_button.pack()
+
+        frame_row2 = tk.Frame(dialog)
+        frame_row2.pack(pady=(5, 20))
+
+        continue_button = tk.Button(frame_row2, text="Continue", command=do_continue)
+        continue_button.pack(side=tk.LEFT, padx=10)
+
+        exit_button = tk.Button(frame_row2, text="Exit", command=do_exit)
+        exit_button.pack(side=tk.LEFT, padx=10)
+
+        # Center the dialog
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        dialog.wait_window()
+        # This point might not be reached if Exit is clicked, as sys.exit() is called.
+        logging.info("Success dialog finished (likely via Continue).")
+
 
     def store_transformations(self, plot, fail=False):
         if not plot.trees:
@@ -584,6 +730,9 @@ class App:
                     trees_to_move.append((tree, plot))
                     affected_plots[plot] = affected_plots.get(plot, 0) + 1
 
+        if not trees_to_move:
+            return #Exit without making any changes if no tree points are affected.
+
         # If exactly one plot is affected and all its trees are selected, do nothing.
         if len(affected_plots) == 1:
             for plot, count in affected_plots.items():
@@ -627,8 +776,61 @@ class App:
     
     
     def on_closing(self):
-        self.root.destroy()
-        sys.exit()
+        logging.info("Closing App window...")
+        self.running = False # Stop the pygame loop
+    
+        # Stop keyboard listener cleanly
+        if self.listener:
+            self.stop_listener()
+            logging.info("Keyboard listener stopped.")
+    
+        # Cancel any pending Tkinter 'after' jobs for this window
+        if self.after_id:
+             try:
+                 self.root.after_cancel(self.after_id)
+                 logging.info("Pending 'after' call cancelled.")
+             except tk.TclError as e:
+                  logging.warning(f"Could not cancel 'after' call (window likely closing): {e}")
+             self.after_id = None
+    
+        # Quit Pygame
+        try:
+            pygame.quit()
+            logging.info("Pygame quit successfully.")
+        except pygame.error as e:
+             logging.warning(f"Pygame quit error (might be already quit or not init): {e}")
+    
+        # Destroy the Toplevel window associated with the App instance
+        try:
+            # Ensure self.root still exists before destroying
+            if self.root and self.root.winfo_exists():
+                 self.root.destroy()
+                 logging.info("App Toplevel window destroyed.")
+            else:
+                 logging.info("App Toplevel window already destroyed or invalid.")
+        except tk.TclError as e:
+             logging.error(f"Error destroying App Toplevel window: {e}")
+    
+        # Re-show the startup menu if the reference exists and it's still valid
+        if self.startup_root and self.startup_root.winfo_exists():
+            try:
+                self.startup_root.deiconify() # Show the startup menu again
+                # Optional: Bring the startup window to the front
+                # bring_window_to_front(self.startup_root)
+                logging.info("Startup root deiconified and brought to front.")
+            except tk.TclError as e:
+                logging.error(f"Error deiconifying startup root (might be destroyed): {e}")
+                # If we can't show startup, exit the whole application cleanly
+                try:
+                     # Attempt to quit the mainloop associated with the startup root
+                     if self.startup_root and self.startup_root.winfo_exists():
+                         self.startup_root.quit()
+                except:
+                     pass # Ignore errors if already gone
+                sys.exit() # Exit application
+        else:
+            logging.warning("Startup root reference not found or window destroyed, exiting application.")
+            sys.exit() # Exit if no startup menu to return to
 
 #Given an arbitrary integer as plotid
 def grey_from_plotid(plotid):
