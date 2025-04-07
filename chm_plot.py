@@ -5,6 +5,7 @@ from scipy.spatial.distance import cdist
 from copy import deepcopy
 from trees import Tree, Plot
 import matplotlib.pyplot as plt
+import logging 
 
 def Naslund1936kwargs(diameter, *params):
     """Calculate tree height based on the Näslund 1936 model."""
@@ -53,46 +54,67 @@ class CHMPlot(Plot):
     def __init__(self, file_path, x=None, y=None, dist=40, height_unit='m', mapping=None, sep='\t'):
         self.trees = []
         self.plotid = 1
-        # Read CSV with the provided separator.
-        reader = pd.read_csv(file_path, sep=sep)
-        
-        # Use mapping for CHM file columns if provided.
+        # Read CSV into a DataFrame.
+        df = pd.read_csv(file_path, sep=sep)
+
+        # Set column names using mapping if provided.
         if mapping:
             x_col = mapping.get('X', 'X').strip() or 'X'
             y_col = mapping.get('Y', 'Y').strip() or 'Y'
             height_col = mapping.get('H', 'H').strip() or 'H'
             idals_col = mapping.get('TreeID', 'IDALS').strip() or 'IDALS'
+            dbh_col = mapping.get('DBH', 'DBH').strip() or 'DBH'
         else:
-            x_col, y_col, height_col, idals_col = 'X', 'Y', 'H', 'IDALS'
-        
-        # If a point is provided and a distance is specified, filter rows by distance.
+            x_col, y_col, height_col, idals_col, dbh_col = 'X', 'Y', 'H', 'IDALS', 'DBH'
+
+        # Check if the height column exists in the data.
+        missing_height = height_col not in df.columns
+
+        # Filter rows based on distance if x, y, and dist are provided.
         if x is not None and y is not None and dist is not None and dist > 0:
-            try:
-                coordinates = reader[[x_col, y_col]].values
-            except KeyError:
-                raise KeyError(f"Columns [{x_col}, {y_col}] not found in the CHM file.")
+            coordinates = df[[x_col, y_col]].values
             point = np.array([[x, y]])
             distances = cdist(coordinates, point, metric='euclidean')
-            df_filtered = reader[distances[:, 0] <= dist]
-            reader = df_filtered
-        # Convert reader to a dictionary list for further processing.
-        reader = reader.to_dict(orient='records')
-        
-        for row in reader:
-            # Determine the height based on the provided height_unit.
-            if height_unit == 'm':
-                height = row[height_col] * 10
-            elif height_unit == 'dm':
-                height = row[height_col]
-            elif height_unit == 'cm':
-                height = row[height_col] / 10
-            if height > 450:
+            df = df[distances[:, 0] <= dist]
+
+        # Convert DataFrame to a list of records.
+        records = df.to_dict(orient='records')
+
+        for row in records:
+            # If the height column is present, use it.
+            if not missing_height:
+                try:
+                    if height_unit == 'm':
+                        height = row[height_col] * 10
+                    elif height_unit == 'dm':
+                        height = row[height_col]
+                    elif height_unit == 'cm':
+                        height = row[height_col] / 10
+                except Exception as e:
+                    logging.error(f"Error processing height for row: {row} - {e}")
+                    continue
+                # DBH value is not needed if height is provided.
+                stemdiam_value = None
+            else:
+                # Height column is missing. Try to get DBH for imputation.
+                try:
+                    stemdiam_value = float(row[dbh_col]) if (dbh_col in row and row[dbh_col] not in [None, ""]) else None
+                except Exception as e:
+                    stemdiam_value = None
+                height = None  # Let the Tree class impute height.
+
+            # Optionally skip trees with unrealistic heights.
+            if height is not None and height > 450:
                 continue
-            tree = Tree(tree_id=row[idals_col], x=row[x_col], y=row[y_col], height_dm=height)
+            
+            tree = Tree(tree_id=row[idals_col], x=row[x_col], y=row[y_col],
+                        stemdiam_cm=stemdiam_value, height_dm=height)
             self.append_tree(tree)
+
         self.center = np.mean(np.array([[tree.x, tree.y] for tree in self.trees]), axis=0)
         self.removed_stems = []
         self.alltrees = deepcopy(self.trees)
+
 
 
     def remove_matches(self, plot, min_dist_percent=15):
