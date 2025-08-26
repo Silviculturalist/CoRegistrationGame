@@ -568,16 +568,18 @@ class App:
             self.current_plot.coordinate_flip()
 
     def join_plot(self):
-        if self.current_plot:
-            if not self.chm_stand.trees:
-                self.flash_message("No CHM trees to match against")
-                return
-            source_array = self.current_plot.get_tree_current_array()[:, -3:]
-            target_array = np.array([[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees])
-            icp = FractionalICP(source_array, target_array)
-            icp.run()
-            new_coords = icp.source[:, :2]
-            self.current_plot.update_tree_positions(new_coords)
+        if self.current_plot is None or not self.current_plot.trees:
+            self.flash_message("No trees in current plot")
+            return
+        if not self.chm_stand.trees:
+            self.flash_message("No CHM trees to match against")
+            return
+        source_array = self.current_plot.get_tree_current_array()[:, -3:]
+        target_array = np.array([[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees])
+        icp = FractionalICP(source_array, target_array)
+        icp.run()
+        new_coords = icp.source[:, :2]
+        self.current_plot.update_tree_positions(new_coords)
 
     def ignore_plot(self):
         """Skip to the next remaining plot without altering queues or writing transforms."""
