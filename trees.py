@@ -2,9 +2,35 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize_scalar
 from copy import deepcopy
+from typing import Optional, Tuple, Dict
+
 
 class Tree:
-    def __init__(self, tree_id, x, y, species=None, stemdiam_cm=None, height_dm=None, original_plot=None):
+    def __init__(
+        self,
+        tree_id,
+        x: float,
+        y: float,
+        species: Optional[str] = None,
+        stemdiam_cm: Optional[float] = None,
+        height_dm: Optional[float] = None,
+        original_plot=None,
+        naslund_params: Optional[Tuple[float, float, float]] = None,
+    ):
+        """A single tree point with optional DBH/height and Näslund parameters.
+
+        Args:
+            tree_id: Identifier from CSV (string/number).
+            x, y: World coordinates (meters).
+            species: Optional species code.
+            stemdiam_cm: DBH in centimeters (if provided).
+            height_dm: Height in decimeters (if provided). Internally stored as meters.
+            original_plot: Back‑reference, used by plot split tool.
+            naslund_params: Optional (a, b, c) for Näslund (1936) H–D model.
+
+        Notes:
+            Internally, self.stemdiam and self.height are stored in meters.
+        """
         self.tree_id = tree_id
         self.x = x
         self.y = y
@@ -12,6 +38,7 @@ class Tree:
         self.currenty = y
         self.original_plot = original_plot
         self.species = species
+        self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
         if stemdiam_cm is not None and height_dm is not None:
             self.stemdiam = stemdiam_cm / 100
             self.height = height_dm / 10
@@ -23,33 +50,19 @@ class Tree:
             self.height = self.get_height(stemdiam_cm / 100)
 
     @staticmethod
-    def naslund_1936(diameter, *params):
+    def naslund_1936(diameter: float, *params: float) -> float:
         return 1.3 + (diameter / (params[0] + params[1] * diameter)) ** params[2]
 
-    def get_height(self, diameter):
-        """Estimate tree height from diameter using the Näslund model.
-
-        Args:
-            diameter (float): Stem diameter in meters.
-
-        Returns:
-            float: Estimated height in meters.
-        """
-        params = [0.01850804, 0.12908718, 1.86770878]
+    def get_height(self, diameter: float) -> float:
+        """Height (m) from diameter (m) via Näslund (1936)."""
+        params = self.naslund_params or (0.01850804, 0.12908718, 1.86770878)
         return self.naslund_1936(diameter, *params)
 
-    def get_diameter(self, height):
-        """Estimate diameter from tree height using the Näslund model.
+    def get_diameter(self, height: float) -> float:
+        """Diameter (m) from height (m) by inverting Näslund via 1D minimize."""
+        params = self.naslund_params or (0.01850804, 0.12908718, 1.86770878)
 
-        Args:
-            height (float): Tree height in meters.
-
-        Returns:
-            float: Estimated stem diameter in meters capped at ``1.5`` m.
-        """
-        params = [0.01850804, 0.12908718, 1.86770878]
-
-        def find_diameter(height, *params):
+        def find_diameter(height: float, *params: float) -> float:
             def objective(x):
                 return (height - self.naslund_1936(x, *params)) ** 2
 
@@ -264,7 +277,16 @@ class StandIterator:
 
 
 class Stand:
-    def __init__(self, ID, file_path, mapping=None, sep='\t'):
+    def __init__(
+        self,
+        ID,
+        file_path,
+        mapping: Optional[Dict[str, str]] = None,
+        sep: str = '\t',
+        impute_dbh: bool = False,
+        impute_h: bool = False,
+        naslund_params: Optional[Tuple[float, float, float]] = None,
+    ):
         self.standid = ID
         self.plots = []
         self.center = None
@@ -281,7 +303,7 @@ class Stand:
             x_col = mapping.get('X', 'X_GROUND')
             y_col = mapping.get('Y', 'Y_GROUND')
             dbh_col = mapping.get('DBH', 'STEMDIAM')
-            h_col   = mapping.get('H', 'H')
+            h_col   = mapping.get('H', 'H') if mapping.get('H', '') != '' else None
             species_col = mapping.get('Species', 'Species')
             xc_col = mapping.get('XC', x_col)
             yc_col = mapping.get('YC', y_col)
@@ -317,12 +339,13 @@ class Stand:
                 stemdiam_cm = float(row.get(dbh_col, 0))
             except (ValueError, TypeError):
                 stemdiam_cm = None
-            # Optional height (assumed meters) -> Tree expects decimeters
-            try:
-                height_m = float(row.get(h_col)) if h_col in row else None
-            except (ValueError, TypeError):
-                height_m = None
-            height_dm = height_m * 10 if height_m is not None else None
+            # Optional height (meters) -> decimeters for Tree
+            height_dm = None
+            if h_col and h_col in row and row.get(h_col) not in (None, ''):
+                try:
+                    height_dm = float(row[h_col]) * 10.0
+                except (ValueError, TypeError):
+                    height_dm = None
 
             tree = Tree(
                 tree_id,
@@ -331,6 +354,7 @@ class Stand:
                 species=row.get(species_col),
                 stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
+                naslund_params=naslund_params,
             )
             # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
@@ -364,16 +388,30 @@ class Stand:
 
 
 class SavedStand(Stand):
-    def __init__(self, ID, file_path):
+    def __init__(self, ID, file_path, naslund_params: Optional[Tuple[float, float, float]] = None):
         self.standid = ID
         self.plots = []
         self.center = None
         self.fp = file_path
+        self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
         reader = pd.read_csv(file_path).to_dict(orient='records')
         for row in reader:
             plot_id = row['PlotID']
             tree_id = row['TreeID']
-            tree = Tree(tree_id, x=row['CurrentX'], y=row['CurrentY'], stemdiam_cm=row['Diameter_cm'])
+            height_dm = None
+            if 'Height_m' in row and row['Height_m'] not in (None, ''):
+                try:
+                    height_dm = float(row['Height_m']) * 10.0
+                except (ValueError, TypeError):
+                    height_dm = None
+            tree = Tree(
+                tree_id,
+                x=row['CurrentX'],
+                y=row['CurrentY'],
+                stemdiam_cm=row.get('Diameter_cm'),
+                height_dm=height_dm,
+                naslund_params=self.naslund_params,
+            )
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:
                 plot = Plot(plotid=plot_id)
