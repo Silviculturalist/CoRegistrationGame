@@ -74,6 +74,28 @@ class Tree:
 
         return min(find_diameter(height, *params), 1.5)
 
+    def impute_height(self) -> None:
+        """Impute height using the stored diameter if missing.
+
+        If the tree's ``height`` attribute is ``None`` but ``stemdiam`` is
+        available, this method estimates the missing height using the
+        :func:`get_height` Näslund (1936) model.
+        """
+
+        if getattr(self, "height", None) is None and getattr(self, "stemdiam", None) is not None:
+            self.height = self.get_height(self.stemdiam)
+
+    def impute_dbh(self) -> None:
+        """Impute diameter using the stored height if missing.
+
+        When ``stemdiam`` is ``None`` but ``height`` is provided, this method
+        back-computes DBH by inverting the Näslund model via
+        :func:`get_diameter`.
+        """
+
+        if getattr(self, "stemdiam", None) is None and getattr(self, "height", None) is not None:
+            self.stemdiam = self.get_diameter(self.height)
+
 
 class PlotIterator:
     def __init__(self, plot):
