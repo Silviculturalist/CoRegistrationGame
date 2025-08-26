@@ -225,8 +225,8 @@ class Plot:
         Raises:
             ValueError: If there are no trees in the plot.
         """
-        source_array = self.get_tree_source_array()[:, 1:3]
-        target_array = self.get_tree_current_array()[:, 1:3]
+        source_array = self.get_tree_source_array()[:, 1:3].astype(float)
+        target_array = self.get_tree_current_array()[:, 1:3].astype(float)
         if source_array.size == 0 or target_array.size == 0:
             raise ValueError("No trees available to compute transform.")
         mu_s = np.mean(source_array, axis=0)
@@ -411,7 +411,23 @@ class Stand:
         self._update_center()
 
     def write_out(self):
-        data = [(plot.plotid, tree.tree_id, tree.currentx, tree.currenty, tree.stemdiam * 100, tree.height)
+        def _safe_cm(stemdiam_m):
+            try:
+                if stemdiam_m is None or (isinstance(stemdiam_m, float) and np.isnan(stemdiam_m)):
+                    return np.nan
+                return float(stemdiam_m) * 100.0
+            except Exception:
+                return np.nan
+
+        def _safe_height(height_m):
+            try:
+                if height_m is None or (isinstance(height_m, float) and np.isnan(height_m)):
+                    return np.nan
+                return float(height_m)
+            except Exception:
+                return np.nan
+
+        data = [(plot.plotid, tree.tree_id, tree.currentx, tree.currenty, _safe_cm(tree.stemdiam), _safe_height(tree.height))
                 for plot in self.plots for tree in plot.trees]
         return pd.DataFrame(data, columns=['PlotID', 'TreeID', 'CurrentX', 'CurrentY', 'Diameter_cm', 'Height_m'])
 
@@ -436,11 +452,17 @@ class SavedStand(Stand):
                     height_dm = float(row['Height_m']) * 10.0
                 except (ValueError, TypeError):
                     height_dm = None
+            # Parse DBH (cm) robustly (may be '', None, or numeric)
+            raw_dbh = row.get('Diameter_cm')
+            try:
+                stemdiam_cm = float(raw_dbh) if raw_dbh not in (None, "") else None
+            except (ValueError, TypeError):
+                stemdiam_cm = None
             tree = Tree(
                 tree_id,
                 x=row['CurrentX'],
                 y=row['CurrentY'],
-                stemdiam_cm=row.get('Diameter_cm'),
+                stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
                 naslund_params=self.naslund_params,
             )
@@ -455,6 +477,22 @@ class SavedStand(Stand):
             plot.center = plot.current_center
 
     def write_out(self):
-        data = [(plot.plotid, tree.tree_id, tree.currentx, tree.currenty, tree.stemdiam * 100, tree.height)
+        def _safe_cm(stemdiam_m):
+            try:
+                if stemdiam_m is None or (isinstance(stemdiam_m, float) and np.isnan(stemdiam_m)):
+                    return np.nan
+                return float(stemdiam_m) * 100.0
+            except Exception:
+                return np.nan
+
+        def _safe_height(height_m):
+            try:
+                if height_m is None or (isinstance(height_m, float) and np.isnan(height_m)):
+                    return np.nan
+                return float(height_m)
+            except Exception:
+                return np.nan
+
+        data = [(plot.plotid, tree.tree_id, tree.currentx, tree.currenty, _safe_cm(tree.stemdiam), _safe_height(tree.height))
                 for plot in self.plots for tree in plot.trees]
         return pd.DataFrame(data, columns=['PlotID', 'TreeID', 'CurrentX', 'CurrentY', 'Diameter_cm', 'Height_m'])
