@@ -95,7 +95,7 @@ The startup menu (built with Tkinter) will allow you to:
 - Map your CSV column names to the required fields (StandID, PlotID, TreeID, X, Y, DBH, H).
 - Choose whether to impute missing values for DBH or Height using the provided Näslund height-diameter relationship (only one imputation option per file is allowed).
 - Set Näslund model parameters (with a real-time preview of the height curve).
-- Select an output folder where the transformed tree data and transformation logs will be saved.
+- Select an output folder for the transformed tree data. Transformation logs are stored in `./Transformations`.
 
 Once configured, click `Start` to launch the interactive application.
 
@@ -159,13 +159,13 @@ Saving Final Results: When all plots are processed or the application is closed 
 ![Confirm Save Dialog](materials/readme_supporting/confirm_save.png)
 
 Success Dialog: Appears after the main GUI/Pygame window closes (if plots were processed).
-Show Files: Opens the output folders (./Trees, ./Transformations) in your file explorer but keeps the dialog open.
+Show Files: Opens the output folders (selected output folder, ./Transformations) in your file explorer but keeps the dialog open.
 Continue: Closes the main application window and returns you to the Startup Menu to process another stand or exit.
 Exit: Closes the main application window and terminates the entire program. Closing the dialog via the 'X' button also performs a full exit.
 
 ![Success Dialog](materials/readme_supporting//show_files_dialogbox.png)
 
-Viewing End Results: The saved CSV files in subfolders to the output folder contain the final adjusted tree coordinates and transformations.
+Viewing End Results: The saved CSV files in the selected output folder contain the final adjusted tree coordinates, while transformation logs are stored in `./Transformations`.
 
 ### Plot Breakout
 Selecting the button `New Plot from Polygon` will open a new window with all points from Layer 1 shown to the same scale as you have currently in the *Pygame Viewport*.
@@ -224,10 +224,10 @@ Double-tap to enter end-result view.
 The program generates the following outputs:
 
 ### Transformed Tree Data:
-After confirming plots, the transformed tree positions (including computed transformations such as rotation, translation, and flipping) are saved as CSV files in the ./Trees subdirectory of your outputs directory.
+After confirming plots, the transformed tree positions (including computed transformations such as rotation, translation, and flipping) are saved as CSV files in the output folder you selected.
 
 ### Transformation Logs:
-Detailed logs of the transformations applied to each plot are saved in the ./Transformations subdirectory of your outputs directory.
+Detailed logs of the transformations applied to each plot are saved in the `./Transformations` directory.
 
 
 ## License and Credits
