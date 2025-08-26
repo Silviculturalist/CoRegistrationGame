@@ -8,13 +8,8 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import logging
 # Import the new modular components:
 from trees import Stand, SavedStand
-from chm_plot import (
-    CHMPlot,
-    SavedPlot,
-    PlotCenters,
-    Naslund1936kwargs,
-    plot_height_curve,
-)
+from chm_plot import CHMPlot, SavedPlot, plot_height_curve
+from render import PlotCenters
 # Note: the main application is launched from app.App
 
 def update_column_options(file_path, sep, comboboxes, mapping_vars):
@@ -68,10 +63,29 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
     if not os.path.isdir(output_folder):
         os.makedirs(output_folder, exist_ok=True)
 
-    # Pass the mapping and separator to the Stand initializer.
-    MyData = Stand(ID=id, file_path=file_path, mapping=file_column_mapping, sep=file_sep)
-    # Optionally, update CHMPlot similarly if needed:
-    MyCHM = CHMPlot(file_path=chm_path, x=MyData.center[0], y=MyData.center[1], dist=70, mapping=chm_column_mapping,sep=chm_sep)
+    # Prepare Näslund parameters for imputation when toggles are enabled.
+    naslund_params = tuple(params) if params else None
+    # Pass the mapping, separator, toggles, and params to the loaders.
+    MyData = Stand(
+        ID=id,
+        file_path=file_path,
+        mapping=file_column_mapping,
+        sep=file_sep,
+        impute_dbh=file_calculate_dbh,
+        impute_h=file_calculate_h,
+        naslund_params=naslund_params if (file_calculate_dbh or file_calculate_h) else None,
+    )
+    MyCHM = CHMPlot(
+        file_path=chm_path,
+        x=MyData.center[0],
+        y=MyData.center[1],
+        dist=70,
+        mapping=chm_column_mapping,
+        sep=chm_sep,
+        impute_dbh=chm_calculate_dbh,
+        impute_h=chm_calculate_h,
+        naslund_params=naslund_params if (chm_calculate_dbh or chm_calculate_h) else None,
+    )
 
     MyPlotCenters = PlotCenters(MyData)
     

@@ -22,7 +22,7 @@ The Co-Registration Game helps forest managers and researchers to:
 - **Visualize** tree and CHM data in a unified viewport.
 - **Adjust** tree plot positions interactively using rotation, translation, and flipping.
 - **Optimize** the registration between field-measured tree data and remotely sensed CHM data.
-- **Impute** missing tree parameters (e.g., height or diameter) using a Näslund (1936) height-diameter relationship.
+- **Impute** missing tree parameters (e.g., height or diameter) using a Näslund (1936) height–diameter relationship (Startup parameters are applied during data load when one variable is missing).
 
 The tool integrates a Tkinter-based startup menu for data selection and configuration with a Pygame-based interactive display for the co-registration process.
 
@@ -93,8 +93,8 @@ The startup menu (built with Tkinter) will allow you to:
 - Select the Tree Data File and CHM Data File.
 - Specify CSV separators.
 - Map your CSV column names to the required fields (StandID, PlotID, TreeID, X, Y, DBH, H).
-- Choose whether to impute missing values for DBH or Height using the provided Näslund height-diameter relationship (only one imputation option per file is allowed).
-- Set Näslund model parameters (with a real-time preview of the height curve).
+- Choose whether to impute missing values for DBH or Height using the provided Näslund height–diameter relationship (only one imputation option per file is allowed).
+- Set Näslund model parameters (with a real-time preview of the height curve). These parameters are applied to imputation during data loading when one of DBH/Height is missing.
 - Select an output folder for the transformed tree data. Transformation logs are stored in `./Transformations`.
 
 Once configured, click `Start` to launch the interactive application.
@@ -219,6 +219,8 @@ Period (`.`): Mark the current plot as unplaceable (do not save its position).
 
 `Space`: Toggle flash mode (visualize different data layers).
 Double-tap to enter end-result view.
+
+`H`: Toggle in-app help overlay with key bindings.
 
 ## Outputs
 The program generates the following outputs:

@@ -16,7 +16,8 @@ import time
 import random
 # Import custom modules
 from trees import Stand, SavedStand
-from chm_plot import CHMPlot, SavedPlot, PlotCenters, to_screen_coordinates, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
+from chm_plot import CHMPlot, SavedPlot
+from render import PlotCenters, to_screen_coordinates, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
 from ficp import FractionalICP
 
 # Set up logging
@@ -90,8 +91,10 @@ class App:
         self.tree_scale = TREE_SCALE_INITIAL
         self.event_queue = queue.Queue()
         self.listener = None  # Will hold the pynput listener instance.
-        self.flash_text = None # For flashing text messages
+        self.flash_text = None  # For flashing text messages
         self.flash_end_time = 0
+        self.show_help = False
+        self.keymap_down, self.keymap_up = self.build_keymaps()
         self.create_ui()
         self.after_id = None
         self.run_pygame()
@@ -145,7 +148,7 @@ class App:
             key_val = key.char
         except AttributeError:
             key_val = key.name
-        self.event_queue.put(('press', key_val))
+        self.event_queue.put(('press', key_val.lower() if isinstance(key_val, str) else key_val))
 
     def on_release(self, key):
         if not self.window_active:
@@ -154,7 +157,7 @@ class App:
             key_val = key.char
         except AttributeError:
             key_val = key.name
-        self.event_queue.put(('release', key_val))
+        self.event_queue.put(('release', key_val.lower() if isinstance(key_val, str) else key_val))
 
     def process_queue(self):
         # --- Start Change ---
@@ -333,6 +336,18 @@ class App:
                     self.screen_size = event.size
                     self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE)
                     self.scale_factor = get_viewport_scale(self.plot_stand, self.screen_size)
+                # Prefer modern Pygame 2 window focus events when available
+                elif hasattr(pygame, "WINDOWEVENT") and event.type == pygame.WINDOWEVENT:
+                    if event.event == pygame.WINDOWEVENT_FOCUS_LOST and self.window_active:
+                        self.window_active = False
+                        self.stop_listener()
+                        self.flash_message("MOUSEOVER \nFOCUS LOST")
+                        logging.info("Pygame window focus lost: stopped keyboard listener.")
+                    elif event.event == pygame.WINDOWEVENT_FOCUS_GAINED and not self.window_active:
+                        self.window_active = True
+                        self.start_listener()
+                        self.flash_message("MOUSEOVER\nFOCUS GAINED")
+                        logging.info("Pygame window focus gained: restarted keyboard listener.")
                 # Handle focus events from the pygame window.
                 elif event.type == pygame.ACTIVEEVENT:
                     # Check if the keyboard focus state changed (state 1)
@@ -374,6 +389,8 @@ class App:
 
             #Draw flash message if active
             self.draw_flash_message()
+            if self.show_help:
+                self.draw_help_overlay()
 
             pygame.display.flip()
             try:
@@ -405,62 +422,96 @@ class App:
             # Clear the flash message when the duration has expired.
             self.flash_text = None
 
+
+    def draw_help_overlay(self):
+        lines = ["Shortcuts:"] + [f"{k}: {v}" for (k, v) in self.help_entries]
+        surf_list = [self.font.render(line, True, (0, 0, 0)) for line in lines]
+        pad = 8
+        width = max(s.get_width() for s in surf_list) + 2 * pad
+        height = sum(s.get_height() for s in surf_list) + 2 * pad
+        x = self.screen_size[0] - width - 10
+        y = 10
+        bg = pygame.Surface((width, height), pygame.SRCALPHA)
+        bg.fill((255, 255, 255, 200))
+        self.screen.blit(bg, (x, y))
+        ty = y + pad
+        for s in surf_list:
+            self.screen.blit(s, (x + pad, ty))
+            ty += s.get_height()
+
     def handle_keyup(self, key):
-        if key == 'n':
-            # Skip without recording a transform row.
-            self.ignore_plot()
-        elif key == '.':
-            # Mark unplaceable: write NA row and advance.
-            self.mark_unplaceable()
-        elif key == 'b':
-            self.step_back()
-        elif key == 'c':
-            self.confirm_plot()
-        elif key == 'o':
-            self.reset_plot_position()
-        elif key == 'f':
-            if self.current_plot:
-                self.current_plot.coordinate_flip()
-        elif key == 'j':
-            self.join_plot()
-        elif key == 'space':
-            now = time.time()
-            if self.last_space_press and (now - self.last_space_press < 0.3):
-                if self.display_mode == 2:
-                    self.display_mode = 0  # revert to default
-                else:
-                    self.display_mode = 2
-                self.last_space_press = None  # reset
-            else:
-                # Record this press and wait briefly to decide if it's single or double.
-                self.last_space_press = now
-                self.root.after(300, self.toggle_flash)
-        elif key == 'p':
-            self.drawing_polygon = not self.drawing_polygon
-            self.polygon_points = []
-        elif key == 'd':
-            self.remove_plot()
+        fn = self.keymap_up.get(key)
+        if fn:
+            fn()
 
     def handle_keydown(self, key):
-        if key in ['left', 'right', 'up', 'down']:
-            self.shift_plot(key)
-        elif key in ['w', 'a', 's', 'd']:
-            self.pan(key)
-        elif key == '1':
-            self.zoom('in')
-        elif key == '2':
-            self.zoom('out')
-        elif key == '6':
-            self.tree_scale *= 1.1
-        elif key == '7':
-            self.tree_scale *= 0.9
-        elif key == '8':
-            self.tree_scale = TREE_SCALE_INITIAL
-        # Align with README: E=counterclockwise (left), R=clockwise (right).
-        elif key == 'e':
-            self.rotate_plot('left')
-        elif key == 'r':
-            self.rotate_plot('right')
+        fn = self.keymap_down.get(key)
+        if fn:
+            fn()
+
+    def build_keymaps(self):
+        """Create dictionaries for keydown and keyup handlers + display help text."""
+        kd = {
+            'left':  lambda: self.shift_plot('left'),
+            'right': lambda: self.shift_plot('right'),
+            'up':    lambda: self.shift_plot('up'),
+            'down':  lambda: self.shift_plot('down'),
+            'w':     lambda: self.pan('up'),
+            'a':     lambda: self.pan('left'),
+            's':     lambda: self.pan('down'),
+            'd':     lambda: self.pan('right'),
+            '1':     lambda: self.zoom('in'),
+            '2':     lambda: self.zoom('out'),
+            '6':     lambda: setattr(self, 'tree_scale', self.tree_scale * 1.1),
+            '7':     lambda: setattr(self, 'tree_scale', self.tree_scale * 0.9),
+            '8':     lambda: setattr(self, 'tree_scale', TREE_SCALE_INITIAL),
+            'e':     lambda: self.rotate_plot('left'),
+            'r':     lambda: self.rotate_plot('right'),
+            'h':     self.toggle_help,
+        }
+        ku = {
+            'n':     self.ignore_plot,
+            '.':     self.mark_unplaceable,
+            'b':     self.step_back,
+            'c':     self.confirm_plot,
+            'o':     self.reset_plot_position,
+            'f':     self.flip_plot,
+            'j':     self.join_plot,
+            'p':     self.toggle_polygon_mode,
+            'd':     self.remove_plot,
+            'space': self.handle_space,
+        }
+        self.help_entries = [
+            ("W/A/S/D", "Pan"),
+            ("Arrow Keys", "Shift plot"),
+            ("1 / 2", "Zoom in / out"),
+            ("6 / 7 / 8", "Tree scale up / down / reset"),
+            ("E / R", "Rotate CCW / CW"),
+            ("F", "Flip plot vertically"),
+            ("J", "Join (Fractional ICP)"),
+            ("C", "Confirm plot"),
+            ("N", "Skip plot"),
+            (".", "Mark unplaceable"),
+            ("B", "Step back"),
+            ("O", "Reset plot position"),
+            ("P", "Polygon split mode"),
+            ("Space", "Toggle unmatched/all (double-tap: end result)"),
+            ("H", "Toggle help overlay"),
+        ]
+        return kd, ku
+
+    def toggle_polygon_mode(self):
+        self.drawing_polygon = not self.drawing_polygon
+        self.polygon_points = []
+
+    def handle_space(self):
+        now = time.time()
+        if self.last_space_press and (now - self.last_space_press < 0.3):
+            self.display_mode = 0 if self.display_mode == 2 else 2
+            self.last_space_press = None
+        else:
+            self.last_space_press = now
+            self.root.after(300, self.toggle_flash)
 
     def pan(self, direction):
         if direction in ['w', 'up']:
@@ -488,6 +539,8 @@ class App:
                 self.display_mode = 0
             self.last_space_press = None
 
+    def toggle_help(self):
+        self.show_help = not self.show_help
     def shift_plot(self, direction):
         if direction == 'up':
             if self.current_plot:
