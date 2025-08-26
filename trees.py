@@ -366,13 +366,13 @@ class Stand:
             self._update_center()
 
     def _update_center(self):
-        if not self.plots:
+        centers = [p.current_center for p in self.plots if p.center is not None]
+        if not centers:
             self.center = None
-        else:
-            sum_x = sum(plot.current_center[0] for plot in self.plots if plot.center is not None)
-            sum_y = sum(plot.current_center[1] for plot in self.plots if plot.center is not None)
-            total_plots = len(self.plots)
-            self.center = (sum_x / total_plots, sum_y / total_plots)
+            return
+        sum_x = sum(c[0] for c in centers)
+        sum_y = sum(c[1] for c in centers)
+        self.center = (sum_x / len(centers), sum_y / len(centers))
 
     def add_plot(self, plot):
         self.plots.append(plot)
