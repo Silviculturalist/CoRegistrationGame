@@ -49,8 +49,8 @@ class App:
         plot_centers (PlotCenters | None): Optional helper for drawing plot centers.
         display_mode (int): 0=all layer2, 1=unmatched layer2, 2=end result (both).
         current_plot_index (int): Index into plot_stand.plots for the active plot.
-        remaining_plots (list[int]): Queue of plot indices yet to be confirmed.
-        completed_plots (list[int]): Stack of plot indices already confirmed.
+        remaining_plot_ids (list[int]): Queue of plot IDs yet to be confirmed.
+        completed_plot_ids (list[int]): Stack of plot IDs already confirmed.
         stand_center (tuple[float, float]): View center in world units.
         scale_factor (float): Pixels per world unit for the viewport.
         output_folder (str): Optional user-selected folder for tree CSV outputs.
@@ -76,8 +76,8 @@ class App:
         # 1 = show only unmatched trees
         # 2 = show end result (both layers together).
         self.current_plot_index = 0
-        self.remaining_plots = list(range(len(plot_stand.plots)))
-        self.completed_plots = []
+        self.remaining_plot_ids = [p.plotid for p in plot_stand.plots]
+        self.completed_plot_ids = []
         self.current_plot = plot_stand.plots[self.current_plot_index]
         self.stand_center = deepcopy(plot_stand.center)
         self.scale_factor = get_viewport_scale(plot_stand, (800, 600))
@@ -127,6 +127,23 @@ class App:
         """Set a flash message to be drawn for a given duration (in seconds)."""
         self.flash_text = message
         self.flash_end_time = time.time() + duration
+
+    def _plot_by_id(self, plotid):
+        """Return (index, plot) for the given PlotID or (None, None) if not found."""
+        for i, p in enumerate(self.plot_stand.plots):
+            if p.plotid == plotid:
+                return i, p
+        return None, None
+
+    def _rebuild_id_queues(self):
+        """Rebuild remaining and completed plot ID queues after plot mutations."""
+        existing_ids = [p.plotid for p in self.plot_stand.plots if len(p.trees) > 0]
+        self.completed_plot_ids = [pid for pid in self.completed_plot_ids if pid in existing_ids]
+        self.remaining_plot_ids = [pid for pid in existing_ids if pid not in self.completed_plot_ids]
+        # Update current_plot_index to match current_plot's position
+        if self.current_plot:
+            idx, _ = self._plot_by_id(self.current_plot.plotid)
+            self.current_plot_index = idx if idx is not None else 0
 
     # These tkinter focus handlers now also control the listener.
     def on_focus_in(self, event):
@@ -238,8 +255,8 @@ class App:
         remaining_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         self.remaining_listbox = tk.Listbox(remaining_frame)
         self.remaining_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        for plot_index in self.remaining_plots:
-            self.remaining_listbox.insert(tk.END, self.plot_stand.plots[plot_index].plotid)
+        for plotid in self.remaining_plot_ids:
+            self.remaining_listbox.insert(tk.END, plotid)
         self.remaining_listbox.bind('<<ListboxSelect>>', self.on_remaining_plot_select)
 
         completed_frame = tk.LabelFrame(list_frame, text="Completed Plots", padx=5, pady=5)
@@ -264,16 +281,16 @@ class App:
 
         try:
             self.remaining_listbox.delete(0, tk.END)
-            for plot_index in self.remaining_plots:
+            for plotid in self.remaining_plot_ids:
                 # Check listbox existence again before inserting
-                if not self.remaining_listbox.winfo_exists(): break
-                plotid = str(self.plot_stand.plots[plot_index].plotid)
-                self.remaining_listbox.insert(tk.END, plotid)
+                if not self.remaining_listbox.winfo_exists():
+                    break
+                self.remaining_listbox.insert(tk.END, str(plotid))
 
             # Check existence before proceeding
             if not self.remaining_listbox.winfo_exists(): return
 
-            current_plotid = str(self.plot_stand.plots[self.current_plot_index].plotid)
+            current_plotid = str(self.current_plot.plotid)
             listbox_items = self.remaining_listbox.get(0, tk.END)
             if current_plotid in listbox_items:
                  idx = listbox_items.index(current_plotid)
@@ -287,10 +304,10 @@ class App:
             if not self.completed_listbox.winfo_exists(): return
 
             self.completed_listbox.delete(0, tk.END)
-            for plot_index in self.completed_plots:
-                 if not self.completed_listbox.winfo_exists(): break
-                 plotid = str(self.plot_stand.plots[plot_index].plotid)
-                 self.completed_listbox.insert(tk.END, plotid)
+            for plotid in self.completed_plot_ids:
+                if not self.completed_listbox.winfo_exists():
+                    break
+                self.completed_listbox.insert(tk.END, str(plotid))
 
         except tk.TclError as e:
             logging.error(f"Error updating listboxes (likely window destroyed): {e}")
@@ -300,13 +317,12 @@ class App:
     def on_remaining_plot_select(self, event):
         selection = event.widget.curselection()
         if selection:
-            selected_plotid = event.widget.get(selection[0])
-            for i, plot in enumerate(self.plot_stand.plots):
-                if str(plot.plotid) == selected_plotid:
-                    self.current_plot_index = i
-                    self.current_plot = self.plot_stand.plots[self.current_plot_index]
-                    break
-            self.update_listboxes()
+            selected_plotid = int(event.widget.get(selection[0]))
+            idx, plot = self._plot_by_id(selected_plotid)
+            if plot is not None:
+                self.current_plot_index = idx
+                self.current_plot = plot
+        self.update_listboxes()
 
     def run_pygame(self):
         # Only set windib on Windows for compatibility on other platforms.
@@ -581,27 +597,32 @@ class App:
 
     def ignore_plot(self):
         """Skip to the next remaining plot without altering queues or writing transforms."""
-        if not self.remaining_plots:
+        if not self.remaining_plot_ids:
             return
-        # Find the current plot's position in the remaining queue.
-        if self.current_plot_index in self.remaining_plots:
-            pos = self.remaining_plots.index(self.current_plot_index)
-            next_plot_index = self.remaining_plots[(pos + 1) % len(self.remaining_plots)]
+        current_id = self.current_plot.plotid
+        if current_id in self.remaining_plot_ids:
+            pos = self.remaining_plot_ids.index(current_id)
+            next_plot_id = self.remaining_plot_ids[(pos + 1) % len(self.remaining_plot_ids)]
         else:
             # If current plot isn't in remaining (e.g., already completed), go to the first remaining.
-            next_plot_index = self.remaining_plots[0]
-        self.current_plot_index = next_plot_index
-        self.current_plot = self.plot_stand.plots[self.current_plot_index]
+            next_plot_id = self.remaining_plot_ids[0]
+        idx, plot = self._plot_by_id(next_plot_id)
+        if plot is not None:
+            self.current_plot_index = idx
+            self.current_plot = plot
         self.update_listboxes()
 
     def mark_unplaceable(self):
         self.store_transformations(self.current_plot, fail=True)
-        if self.current_plot_index in self.remaining_plots:
-            idx_in_queue = self.remaining_plots.index(self.current_plot_index)
-            self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
-        if self.remaining_plots:
-            self.current_plot_index = self.remaining_plots[0]
-            self.current_plot = self.plot_stand.plots[self.current_plot_index]
+        if self.current_plot.plotid in self.remaining_plot_ids:
+            idx_in_queue = self.remaining_plot_ids.index(self.current_plot.plotid)
+            self.completed_plot_ids.append(self.remaining_plot_ids.pop(idx_in_queue))
+        if self.remaining_plot_ids:
+            next_id = self.remaining_plot_ids[0]
+            idx, plot = self._plot_by_id(next_id)
+            if plot is not None:
+                self.current_plot_index = idx
+                self.current_plot = plot
         else:
             # If no plots remain, save results and exit workflow.
             self.save_files()
@@ -614,17 +635,27 @@ class App:
                 tree.original_plot.append_tree(tree)
             self.plot_stand.plots.remove(self.current_plot)
             self.new_plots.remove(self.current_plot)
-            if self.completed_plots:
-                self.current_plot_index = self.completed_plots.pop()
-                self.current_plot = self.plot_stand.plots[self.current_plot_index]
+            self._rebuild_id_queues()
+            if self.completed_plot_ids:
+                last_id = self.completed_plot_ids.pop()
+                idx, plot = self._plot_by_id(last_id)
+                if plot is not None:
+                    self.current_plot_index = idx
+                    self.current_plot = plot
+            elif self.remaining_plot_ids:
+                next_id = self.remaining_plot_ids[0]
+                idx, plot = self._plot_by_id(next_id)
+                if plot is not None:
+                    self.current_plot_index = idx
+                    self.current_plot = plot
             else:
-                self.current_plot_index = self.remaining_plots.pop(0)
-                self.current_plot = self.plot_stand.plots[self.current_plot_index]
+                self.current_plot_index = 0
+                self.current_plot = None
         self.update_listboxes()
 
     def confirm_plot(self):
         # Check if we're on the last plot and confirm before final saving.
-        if len(self.remaining_plots) == 1:
+        if len(self.remaining_plot_ids) == 1:
             confirm_save = messagebox.askyesno("Confirm Save",
                                             "You have confirmed the last plot.\n\n"
                                             "Are you sure you want to save the results to files?")
@@ -632,22 +663,25 @@ class App:
                 return
             else:
                 self.store_transformations(self.current_plot)
-                if self.current_plot_index in self.remaining_plots:
-                    idx_in_queue = self.remaining_plots.index(self.current_plot_index)
-                    self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
+                if self.current_plot.plotid in self.remaining_plot_ids:
+                    idx_in_queue = self.remaining_plot_ids.index(self.current_plot.plotid)
+                    self.completed_plot_ids.append(self.remaining_plot_ids.pop(idx_in_queue))
                 self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
                 self.save_files()
                 self.show_success_dialog()
         else:
             self.store_transformations(self.current_plot)
-            if self.current_plot_index in self.remaining_plots:
-                idx_in_queue = self.remaining_plots.index(self.current_plot_index)
-                self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
+            if self.current_plot.plotid in self.remaining_plot_ids:
+                idx_in_queue = self.remaining_plot_ids.index(self.current_plot.plotid)
+                self.completed_plot_ids.append(self.remaining_plot_ids.pop(idx_in_queue))
             self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
-            if self.remaining_plots:
-                # Set the current plot to the first index in the remaining queue.
-                self.current_plot_index = self.remaining_plots[0]
-                self.current_plot = self.plot_stand.plots[self.current_plot_index]
+            if self.remaining_plot_ids:
+                # Set the current plot to the first ID in the remaining queue.
+                next_id = self.remaining_plot_ids[0]
+                idx, plot = self._plot_by_id(next_id)
+                if plot is not None:
+                    self.current_plot_index = idx
+                    self.current_plot = plot
         self.update_listboxes()
 
     def save_files(self):
@@ -834,11 +868,13 @@ class App:
 
     def step_back(self):
         """Restore the last confirmed plot back to the remaining queue and make it current."""
-        if self.completed_plots:
-            last_completed = self.completed_plots.pop()  # this is a plot index
-            self.remaining_plots.insert(0, last_completed)
-            self.current_plot_index = self.remaining_plots[0]
-            self.current_plot = self.plot_stand.plots[self.current_plot_index]
+        if self.completed_plot_ids:
+            last_completed = self.completed_plot_ids.pop()
+            self.remaining_plot_ids.insert(0, last_completed)
+            idx, plot = self._plot_by_id(last_completed)
+            if plot is not None:
+                self.current_plot_index = idx
+                self.current_plot = plot
             if self.current_plot.plotid in self.plot_transformations:
                 self.plot_transformations.pop(self.current_plot.plotid)
             self.chm_stand.restore_matches()
@@ -901,12 +937,13 @@ class App:
         logging.info(f"Added new Plot with ID {new_plot.plotid}")
         self.new_plots.append(new_plot)
 
-        # Recalculate the remaining_plots indices based on the updated plot list.
-        self.remaining_plots = [i for i, p in enumerate(self.plot_stand.plots) if len(p.trees) > 0]
+        # Rebuild the plot ID queues based on the updated plot list.
+        self._rebuild_id_queues()
         # Set the new plot as the current plot.
-        new_index = self.plot_stand.plots.index(new_plot)
-        self.current_plot_index = new_index
-        self.current_plot = new_plot
+        idx, plot = self._plot_by_id(new_plot.plotid)
+        if plot is not None:
+            self.current_plot_index = idx
+            self.current_plot = plot
         self.update_listboxes()
     
     
