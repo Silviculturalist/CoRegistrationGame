@@ -165,8 +165,12 @@ class CHMPlot(Plot):
                 y=row[y_col],
                 stemdiam_cm=stemdiam_value,
                 height_dm=height,
-                naslund_params=self.naslund_params,
+                naslund_params=self.naslund_params if (self.impute_dbh or self.impute_h) else None,
             )
+            if self.impute_h:
+                tree.impute_height(self.naslund_params)
+            if self.impute_dbh:
+                tree.impute_dbh(self.naslund_params)
             self.append_tree(tree)
 
         pts = np.array([[tree.x, tree.y] for tree in self.trees])

@@ -39,15 +39,8 @@ class Tree:
         self.original_plot = original_plot
         self.species = species
         self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
-        if stemdiam_cm is not None and height_dm is not None:
-            self.stemdiam = stemdiam_cm / 100
-            self.height = height_dm / 10
-        elif stemdiam_cm is None and height_dm is not None:
-            self.stemdiam = self.get_diameter(height_dm / 10)
-            self.height = height_dm / 10
-        elif stemdiam_cm is not None and height_dm is None:
-            self.stemdiam = stemdiam_cm / 100
-            self.height = self.get_height(stemdiam_cm / 100)
+        self.stemdiam = stemdiam_cm / 100 if stemdiam_cm is not None else None
+        self.height = height_dm / 10 if height_dm is not None else None
 
     @staticmethod
     def naslund_1936(diameter: float, *params: float) -> float:
@@ -70,6 +63,22 @@ class Tree:
             return result.x
 
         return min(find_diameter(height, *params), 1.5)
+
+    def impute_height(self, naslund_params: Optional[Tuple[float, float, float]] = None) -> None:
+        """Impute missing height using existing diameter and Näslund parameters."""
+        if self.height is not None or self.stemdiam is None:
+            return
+        if naslund_params is not None:
+            self.naslund_params = tuple(naslund_params)
+        self.height = self.get_height(self.stemdiam)
+
+    def impute_dbh(self, naslund_params: Optional[Tuple[float, float, float]] = None) -> None:
+        """Impute missing diameter using existing height and Näslund parameters."""
+        if self.stemdiam is not None or self.height is None:
+            return
+        if naslund_params is not None:
+            self.naslund_params = tuple(naslund_params)
+        self.stemdiam = self.get_diameter(self.height)
 
 
 class PlotIterator:
@@ -354,8 +363,12 @@ class Stand:
                 species=row.get(species_col),
                 stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
-                naslund_params=naslund_params,
+                naslund_params=naslund_params if (impute_dbh or impute_h) else None,
             )
+            if impute_h:
+                tree.impute_height(naslund_params)
+            if impute_dbh:
+                tree.impute_dbh(naslund_params)
             # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:
