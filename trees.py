@@ -6,6 +6,9 @@ from typing import Optional, Tuple, Dict
 
 
 class Tree:
+    # Default Näslund params (a, b, c) – match UI defaults
+    NASLUND_DEFAULT = (1.74105089, 0.35979281, 3.56879791)
+
     def __init__(
         self,
         tree_id,
@@ -39,7 +42,9 @@ class Tree:
         self.original_plot = original_plot
         self.species = species
         self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
+
         # Store provided measurements in meters without automatic imputation.
+
         self.stemdiam = stemdiam_cm / 100 if stemdiam_cm is not None else None
         self.height = height_dm / 10 if height_dm is not None else None
 
@@ -47,46 +52,15 @@ class Tree:
     def naslund_1936(diameter: float, *params: float) -> float:
         return 1.3 + (diameter / (params[0] + params[1] * diameter)) ** params[2]
 
-    def get_height(
-        self,
-        diameter: float,
-        params: Optional[Tuple[float, float, float]] = None,
-    ) -> float:
-        """Height (m) from diameter (m) via Näslund (1936).
-
-        Args:
-            diameter: Stem diameter in meters.
-            params: Optional Näslund parameters to use for the calculation.
-
-        Returns:
-            float: Estimated height in meters.
-        """
-        params = params or self.naslund_params or (
-            0.01850804,
-            0.12908718,
-            1.86770878,
-        )
+    def get_height(self, diameter: float) -> float:
+        """Height (m) from diameter (m) via Näslund (1936)."""
+        params = self.naslund_params or self.NASLUND_DEFAULT
         return self.naslund_1936(diameter, *params)
 
-    def get_diameter(
-        self,
-        height: float,
-        params: Optional[Tuple[float, float, float]] = None,
-    ) -> float:
-        """Diameter (m) from height (m) by inverting Näslund via 1D minimize.
+    def get_diameter(self, height: float) -> float:
+        """Diameter (m) from height (m) by inverting Näslund via 1D minimize."""
+        params = self.naslund_params or self.NASLUND_DEFAULT
 
-        Args:
-            height: Tree height in meters.
-            params: Optional Näslund parameters to use for the calculation.
-
-        Returns:
-            float: Estimated diameter in meters.
-        """
-        params = params or self.naslund_params or (
-            0.01850804,
-            0.12908718,
-            1.86770878,
-        )
 
         def find_diameter(height: float, *params: float) -> float:
             def objective(x):
@@ -97,33 +71,23 @@ class Tree:
 
         return min(find_diameter(height, *params), 1.5)
 
-    def impute_height(
-        self, naslund_params: Optional[Tuple[float, float, float]] = None
-    ) -> None:
-        """Impute tree height from diameter using Näslund parameters.
+    def impute_height(self, naslund_params: Optional[Tuple[float, float, float]] = None) -> None:
+        """Impute missing height using existing diameter and Näslund parameters."""
+        if self.height is not None or self.stemdiam is None:
+            return
+        if naslund_params is not None:
+            self.naslund_params = tuple(naslund_params)
+        self.height = self.get_height(self.stemdiam)
 
-        Args:
-            naslund_params: Optional Näslund parameter tuple (a, b, c).
-        """
-        params = naslund_params or self.naslund_params
-        if params:
-            self.naslund_params = tuple(params)
-        if self.stemdiam is not None and self.height is None:
-            self.height = self.get_height(self.stemdiam, params)
+    def impute_dbh(self, naslund_params: Optional[Tuple[float, float, float]] = None) -> None:
+        """Impute missing diameter using existing height and Näslund parameters."""
+        if self.stemdiam is not None or self.height is None:
+            return
+        if naslund_params is not None:
+            self.naslund_params = tuple(naslund_params)
+        self.stemdiam = self.get_diameter(self.height)
 
-    def impute_dbh(
-        self, naslund_params: Optional[Tuple[float, float, float]] = None
-    ) -> None:
-        """Impute stem diameter from height using Näslund parameters.
 
-        Args:
-            naslund_params: Optional Näslund parameter tuple (a, b, c).
-        """
-        params = naslund_params or self.naslund_params
-        if params:
-            self.naslund_params = tuple(params)
-        if self.height is not None and self.stemdiam is None:
-            self.stemdiam = self.get_diameter(self.height, params)
 
 
 class PlotIterator:
@@ -394,8 +358,9 @@ class Stand:
         for row in reader:
             plot_id = row.get(plot_col)
             tree_id = row.get(tree_col)
+            raw_dbh = row.get(dbh_col) if dbh_col in row else None
             try:
-                stemdiam_cm = float(row.get(dbh_col, 0))
+                stemdiam_cm = float(raw_dbh) if raw_dbh not in (None, "") else None
             except (ValueError, TypeError):
                 stemdiam_cm = None
             # Optional height (meters) -> decimeters for Tree
@@ -413,6 +378,7 @@ class Stand:
                 species=row.get(species_col),
                 stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
+
                 naslund_params=self.naslund_params
                 if (self.impute_dbh or self.impute_h)
                 else None,
@@ -421,6 +387,7 @@ class Stand:
                 tree.impute_height(self.naslund_params)
             if self.impute_dbh:
                 tree.impute_dbh(self.naslund_params)
+
             # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:

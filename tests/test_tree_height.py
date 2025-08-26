@@ -50,7 +50,7 @@ def build_stand(tmp_path):
         'DBH': 'STEMDIAM',
         'H': 'H',
     }
-    return Stand(1, csv_path, mapping=mapping, sep=',')
+    return Stand(1, csv_path, mapping=mapping, sep=',', impute_dbh=True, impute_h=True)
 
 
 def test_height_parsing_and_derivation(tmp_path):
