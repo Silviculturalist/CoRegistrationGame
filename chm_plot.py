@@ -205,22 +205,52 @@ class CHMPlot(Plot):
             None
         """
         current_removal = []
-        for tree in plot.trees:
-            # Find closest neighbor using scalar distance (convert result to a scalar)
-            closest_tree = min(
-                self.trees,
-                key=lambda x: cdist(
-                    np.array([[tree.currentx, tree.currenty, tree.height]]),
-                    np.array([[x.currentx, x.currenty, x.height]]),
-                ).item(),
-            )
-            distance = cdist(
-                np.array([[tree.currentx, tree.currenty, tree.height]]),
-                np.array([[closest_tree.currentx, closest_tree.currenty, closest_tree.height]]),
-            ).item()
-            if distance < ((min_dist_percent / 100) * tree.height):
-                current_removal.append(closest_tree)
-                if closest_tree in self.trees:
+
+        def _has_all_heights(trees):
+            for t in trees:
+                try:
+                    if t.height is None or np.isnan(float(t.height)):
+                        return False
+                except Exception:
+                    return False
+            return True
+
+        use_3d = _has_all_heights(plot.trees) and _has_all_heights(self.trees)
+
+        if use_3d:
+            for tree in plot.trees:
+                src = np.array([[float(tree.currentx), float(tree.currenty), float(tree.height)]], dtype=float)
+                tgt = np.array([[float(x.currentx), float(x.currenty), float(x.height)] for x in self.trees], dtype=float)
+                if len(tgt) == 0:
+                    break
+                dists = cdist(src, tgt).ravel()
+                idx = int(np.argmin(dists))
+                closest_tree = self.trees[idx]
+                distance = float(dists[idx])
+                if distance < ((min_dist_percent / 100.0) * float(tree.height)):
+                    current_removal.append(closest_tree)
+                    self.trees.remove(closest_tree)
+        else:
+            # Fallback to 2D spatial matching (no height component)
+            for tree in plot.trees:
+                src = np.array([[float(tree.currentx), float(tree.currenty)]], dtype=float)
+                tgt = np.array([[float(x.currentx), float(x.currenty)] for x in self.trees], dtype=float)
+                if len(tgt) == 0:
+                    break
+                dists = cdist(src, tgt).ravel()
+                idx = int(np.argmin(dists))
+                closest_tree = self.trees[idx]
+                distance = float(dists[idx])
+                # Use the same height-based threshold if we have a height on the plot-tree;
+                # otherwise assume a reasonable default (10 m) to keep behavior predictable.
+                try:
+                    h_for_thresh = float(tree.height)
+                    if np.isnan(h_for_thresh):
+                        h_for_thresh = 10.0
+                except Exception:
+                    h_for_thresh = 10.0
+                if distance < ((min_dist_percent / 100.0) * h_for_thresh):
+                    current_removal.append(closest_tree)
                     self.trees.remove(closest_tree)
         self.removed_stems.append(current_removal)
 
