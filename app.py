@@ -478,7 +478,7 @@ class App:
             'f':     self.flip_plot,
             'j':     self.join_plot,
             'p':     self.toggle_polygon_mode,
-            'd':     self.remove_plot,
+            'x':     self.remove_plot,
             'space': self.handle_space,
         }
         self.help_entries = [
@@ -493,6 +493,7 @@ class App:
             ("N", "Skip plot"),
             (".", "Mark unplaceable"),
             ("B", "Step back"),
+            ("X", "Remove plot"),
             ("O", "Reset plot position"),
             ("P", "Polygon split mode"),
             ("Space", "Toggle unmatched/all (double-tap: end result)"),
