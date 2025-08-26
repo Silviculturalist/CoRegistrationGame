@@ -262,13 +262,13 @@ class App:
             for plot_index in self.remaining_plots:
                 # Check listbox existence again before inserting
                 if not self.remaining_listbox.winfo_exists(): break
-                plotid = self.plot_stand.plots[plot_index].plotid
+                plotid = str(self.plot_stand.plots[plot_index].plotid)
                 self.remaining_listbox.insert(tk.END, plotid)
 
             # Check existence before proceeding
             if not self.remaining_listbox.winfo_exists(): return
 
-            current_plotid = self.plot_stand.plots[self.current_plot_index].plotid
+            current_plotid = str(self.plot_stand.plots[self.current_plot_index].plotid)
             listbox_items = self.remaining_listbox.get(0, tk.END)
             if current_plotid in listbox_items:
                  idx = listbox_items.index(current_plotid)
@@ -284,7 +284,7 @@ class App:
             self.completed_listbox.delete(0, tk.END)
             for plot_index in self.completed_plots:
                  if not self.completed_listbox.winfo_exists(): break
-                 plotid = self.plot_stand.plots[plot_index].plotid
+                 plotid = str(self.plot_stand.plots[plot_index].plotid)
                  self.completed_listbox.insert(tk.END, plotid)
 
         except tk.TclError as e:
@@ -297,7 +297,7 @@ class App:
         if selection:
             selected_plotid = event.widget.get(selection[0])
             for i, plot in enumerate(self.plot_stand.plots):
-                if plot.plotid == selected_plotid:
+                if str(plot.plotid) == selected_plotid:
                     self.current_plot_index = i
                     self.current_plot = self.plot_stand.plots[self.current_plot_index]
                     break
