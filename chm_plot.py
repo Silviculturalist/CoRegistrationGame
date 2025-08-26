@@ -21,14 +21,14 @@ def plot_height_curve(params):
     Returns:
         fig (matplotlib.figure.Figure): The generated figure.
     """
-    # Create a range of diameters (in cm)
-    diameters = [i * 0.1 for i in range(1, 601)]  # 0.1 cm to 60 cm
-    # Compute heights (in m) using the Näslund model
-    heights = [Naslund1936kwargs(d, *params) for d in diameters]
+    # Create a range of diameters in centimeters and convert to meters
+    diameters_cm = [i * 0.1 for i in range(1, 601)]  # 0.1 cm to 60 cm
+    diameters_m = [d / 100.0 for d in diameters_cm]
+    heights = [Naslund1936kwargs(d, *params) for d in diameters_m]
 
     fig, ax = plt.subplots()
-    ax.plot(diameters, heights, label="Height Curve")
-    ax.set_xlabel("Diameter (cm)")
+    ax.plot(diameters_cm, heights, label="Height Curve")
+    ax.set_xlabel("Diameter at breast height (cm)")
     ax.set_ylabel("Height (m)")
     ax.grid(True)
     ax.legend()
