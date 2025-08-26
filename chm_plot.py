@@ -153,11 +153,15 @@ class CHMPlot(Plot):
             if height is not None and height > 450:
                 continue
 
-            if missing_height and (
-                stemdiam_value is None or
-                (isinstance(stemdiam_value, float) and np.isnan(stemdiam_value))
+            # Skip rows that provide neither metric
+            if (
+                (height is None or (isinstance(height, float) and np.isnan(height)))
+                and (
+                    stemdiam_value is None
+                    or (isinstance(stemdiam_value, float) and np.isnan(stemdiam_value))
+                )
             ):
-                continue  # skip rows with neither H nor DBH
+                continue
 
             tree = Tree(
                 tree_id=row[idals_col],
