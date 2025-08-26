@@ -367,8 +367,12 @@ class App:
             self.flash_text = None
 
     def handle_keyup(self, key):
-        if key == 'n' or key == '.':
+        if key == 'n':
+            # Skip without recording a transform row.
             self.ignore_plot()
+        elif key == '.':
+            # Mark unplaceable: write NA row and advance.
+            self.mark_unplaceable()
         elif key == 'b':
             self.step_back()
         elif key == 'c':
@@ -482,6 +486,20 @@ class App:
     def ignore_plot(self):
         self.current_plot_index = (self.current_plot_index + 1) % len(self.remaining_plots)
         self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
+        self.update_listboxes()
+
+    def mark_unplaceable(self):
+        self.store_transformations(self.current_plot, fail=True)
+        if self.current_plot_index in self.remaining_plots:
+            idx_in_queue = self.remaining_plots.index(self.current_plot_index)
+            self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
+        if self.remaining_plots:
+            self.current_plot_index = self.remaining_plots[0]
+            self.current_plot = self.plot_stand.plots[self.current_plot_index]
+        else:
+            # If no plots remain, save results and exit workflow.
+            self.save_files()
+            self.show_success_dialog()
         self.update_listboxes()
 
     def remove_plot(self):
