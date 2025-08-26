@@ -27,16 +27,35 @@ class Tree:
         return 1.3 + (diameter / (params[0] + params[1] * diameter)) ** params[2]
 
     def get_height(self, diameter):
+        """Estimate tree height from diameter using the Näslund model.
+
+        Args:
+            diameter (float): Stem diameter in meters.
+
+        Returns:
+            float: Estimated height in meters.
+        """
         params = [0.01850804, 0.12908718, 1.86770878]
         return self.naslund_1936(diameter, *params)
 
     def get_diameter(self, height):
+        """Estimate diameter from tree height using the Näslund model.
+
+        Args:
+            height (float): Tree height in meters.
+
+        Returns:
+            float: Estimated stem diameter in meters capped at ``1.5`` m.
+        """
         params = [0.01850804, 0.12908718, 1.86770878]
+
         def find_diameter(height, *params):
             def objective(x):
                 return (height - self.naslund_1936(x, *params)) ** 2
+
             result = minimize_scalar(objective, bounds=(0, 100), method='bounded')
             return result.x
+
         return min(find_diameter(height, *params), 1.5)
 
 
@@ -102,20 +121,41 @@ class Plot:
             tree.currenty = y_translated + self.current_center[1]
 
     def translate_plot(self, value):
+        """Translate the plot by a given vector.
+
+        Args:
+            value (tuple[float, float]): ``(dx, dy)`` translation in world units.
+
+        Returns:
+            None
+        """
         self._apply_translation(value)
-        self.current_translation = (self.current_translation[0] + value[0], self.current_translation[1] + value[1])
+        self.current_translation = (
+            self.current_translation[0] + value[0],
+            self.current_translation[1] + value[1],
+        )
 
     def rotate_plot(self, value):
+        """Rotate the plot around its current center.
+
+        Args:
+            value (float): Rotation angle in degrees (counterclockwise).
+
+        Returns:
+            None
+        """
         self._apply_rotation(value)
         self.current_rotation += value
 
     def coordinate_flip(self):
+        """Flip the plot vertically about its current center."""
         self._apply_rotation(-self.current_rotation)
         self._apply_flip()
         self._apply_rotation(self.current_rotation)
         self.flipped = not self.flipped
 
     def reset_transformations(self):
+        """Reset tree positions and transformation state to original values."""
         for tree in self.trees:
             tree.currentx = tree.x
             tree.currenty = tree.y
@@ -173,12 +213,32 @@ class Plot:
         return R, t, self.flipped
 
     def append_tree(self, tree):
+        """Add a tree to the plot and update its centroid.
+
+        Args:
+            tree (Tree): Tree instance to append.
+
+        Returns:
+            None
+        """
         tree.currentx = tree.x
         tree.currenty = tree.y
         self.trees.append(tree)
         self._update_centroid()
 
     def update_tree_positions(self, update_array):
+        """Update current positions of trees from an array of coordinates.
+
+        Args:
+            update_array (np.ndarray): Array of shape ``(n, 2)`` with new ``x`` and
+                ``y`` coordinates.
+
+        Raises:
+            ValueError: If the array length does not match the number of trees.
+
+        Returns:
+            None
+        """
         if len(self.trees) != update_array.shape[0]:
             raise ValueError('Update array length does not match number of trees in the plot')
         for tree, (x, y) in zip(self.trees, update_array):

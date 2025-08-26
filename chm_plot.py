@@ -36,16 +36,38 @@ def plot_height_curve(params):
 
 
 def to_screen_coordinates(geo_coord, stand_center, scale_factor, screen_size):
+    """Convert world coordinates to screen coordinates.
+
+    Args:
+        geo_coord (tuple[float, float]): ``(x, y)`` position in world units.
+        stand_center (tuple[float, float]): World-space center used as origin.
+        scale_factor (float): Pixels per world unit.
+        screen_size (tuple[int, int]): Screen width and height in pixels.
+
+    Returns:
+        tuple[int, int]: Screen-space ``(x, y)`` coordinates.
+    """
     screen_x = (geo_coord[0] - stand_center[0]) * scale_factor + screen_size[0] / 2
     screen_y = (geo_coord[1] - stand_center[1]) * scale_factor + screen_size[1] / 2
     return int(screen_x), int(screen_y)
 
 def get_viewport_scale(stand, screen_size):
+    """Compute a pixel-to-world scaling factor for the viewport.
+
+    Args:
+        stand (Stand): Stand containing plots and trees.
+        screen_size (tuple[int, int]): Screen width and height in pixels.
+
+    Returns:
+        float: Scale factor expressed as pixels per world unit.
+    """
     all_trees = [tree for plot in stand.plots for tree in plot.trees]
     if not all_trees:
         return 1
     coords = np.array([(tree.currentx, tree.currenty) for tree in all_trees])
-    furthest_distance = max(np.sqrt((x - stand.center[0]) ** 2 + (y - stand.center[1]) ** 2) for x, y in coords)
+    furthest_distance = max(
+        np.sqrt((x - stand.center[0]) ** 2 + (y - stand.center[1]) ** 2) for x, y in coords
+    )
     max_screen_distance = min(screen_size) / 2 - 20  # 20 pixels padding
     scale_factor = max_screen_distance / (furthest_distance + 2)  # +2 meters buffer
     return scale_factor
@@ -146,19 +168,32 @@ class CHMPlot(Plot):
 
 
     def remove_matches(self, plot, min_dist_percent=15):
-        """
-        Remove closest neighbor for each tree from CHM if within min_dist_percent of tree height.
+        """Remove CHM trees matched closely to plot trees.
+
+        For each tree in ``plot`` the closest neighbor in the CHM layer is
+        removed if it lies within ``min_dist_percent`` of that tree's height.
+
+        Args:
+            plot (Plot): Plot whose trees are used to search for matches.
+            min_dist_percent (float): Maximum allowed distance expressed as a
+                percentage of the tree height.
+
+        Returns:
+            None
         """
         current_removal = []
         for tree in plot.trees:
             # Find closest neighbor using scalar distance (convert result to a scalar)
-            closest_tree = min(self.trees, key=lambda x: cdist(
-                np.array([[tree.currentx, tree.currenty, tree.height]]),
-                np.array([[x.currentx, x.currenty, x.height]])
-            ).item())
+            closest_tree = min(
+                self.trees,
+                key=lambda x: cdist(
+                    np.array([[tree.currentx, tree.currenty, tree.height]]),
+                    np.array([[x.currentx, x.currenty, x.height]]),
+                ).item(),
+            )
             distance = cdist(
                 np.array([[tree.currentx, tree.currenty, tree.height]]),
-                np.array([[closest_tree.currentx, closest_tree.currenty, closest_tree.height]])
+                np.array([[closest_tree.currentx, closest_tree.currenty, closest_tree.height]]),
             ).item()
             if distance < ((min_dist_percent / 100) * tree.height):
                 current_removal.append(closest_tree)
@@ -167,6 +202,11 @@ class CHMPlot(Plot):
         self.removed_stems.append(current_removal)
 
     def restore_matches(self):
+        """Restore the most recently removed CHM trees.
+
+        Returns:
+            None
+        """
         if not self.removed_stems:
             return
         last_removal = self.removed_stems.pop()
@@ -209,18 +249,70 @@ class PlotCenters:
             self.centers = np.array([])
             
     def draw_single_center(self, screen, center, color, alpha, stand_center, scale_factor, screen_size):
+        """Draw a single plot center on the screen.
+
+        Args:
+            screen (pygame.Surface): Surface to draw on.
+            center (tuple[float, float]): World coordinates of the plot center.
+            color (tuple[int, int, int]): RGB color for the center.
+            alpha (float): Opacity value in ``[0, 1]``.
+            stand_center (tuple[float, float]): Stand center for coordinate transform.
+            scale_factor (float): Pixels per world unit.
+            screen_size (tuple[int, int]): Screen dimensions in pixels.
+
+        Returns:
+            None
+        """
         adjusted_position = to_screen_coordinates(center, stand_center, scale_factor, screen_size)
         adjusted_radius = 2  # constant radius
         alpha_surface = pygame.Surface((adjusted_radius * 2, adjusted_radius * 2), pygame.SRCALPHA)
         alpha_surface.fill((0, 0, 0, 0))
-        pygame.draw.circle(alpha_surface, color + (int(255 * alpha),), (adjusted_radius, adjusted_radius), adjusted_radius)
-        screen.blit(alpha_surface, (adjusted_position[0] - adjusted_radius, adjusted_position[1] - adjusted_radius))
+        pygame.draw.circle(
+            alpha_surface,
+            color + (int(255 * alpha),),
+            (adjusted_radius, adjusted_radius),
+            adjusted_radius,
+        )
+        screen.blit(
+            alpha_surface,
+            (adjusted_position[0] - adjusted_radius, adjusted_position[1] - adjusted_radius),
+        )
 
     def draw_centers(self, screen, color, alpha, stand_center, scale_factor, screen_size):
+        """Draw all stored plot centers.
+
+        Args:
+            screen (pygame.Surface): Surface to draw on.
+            color (tuple[int, int, int]): RGB color for centers.
+            alpha (float): Opacity value in ``[0, 1]``.
+            stand_center (tuple[float, float]): Stand center for coordinate transform.
+            scale_factor (float): Pixels per world unit.
+            screen_size (tuple[int, int]): Screen dimensions in pixels.
+
+        Returns:
+            None
+        """
         for center in self.centers:
             self.draw_single_center(screen, center, color, alpha, stand_center, scale_factor, screen_size)
 
 def draw_tree(screen, tree, tree_scale, color, alpha, stand_center, scale_factor, screen_size, tree_component=False):
+    """Draw a tree as a filled circle.
+
+    Args:
+        screen (pygame.Surface): Surface to draw on.
+        tree (Tree): Tree instance to render.
+        tree_scale (float): Scale factor applied to radius.
+        color (tuple[int, int, int]): RGB color for the tree.
+        alpha (float): Opacity value in ``[0, 1]``.
+        stand_center (tuple[float, float]): Stand center for coordinate transform.
+        scale_factor (float): Pixels per world unit.
+        screen_size (tuple[int, int]): Screen dimensions in pixels.
+        tree_component (bool, optional): When ``True``, scale by stem diameter
+            rather than height. Defaults to ``False``.
+
+    Returns:
+        None
+    """
     adjusted_position = to_screen_coordinates((tree.currentx, tree.currenty), stand_center, scale_factor, screen_size)
     if tree_component:
         adjusted_radius = max(int(tree.stemdiam * 10 * scale_factor / 2), 1) * tree_scale
@@ -228,18 +320,97 @@ def draw_tree(screen, tree, tree_scale, color, alpha, stand_center, scale_factor
         adjusted_radius = max(int(tree.height / 10 * scale_factor / 2), 1) * tree_scale
     alpha_surface = pygame.Surface((adjusted_radius * 2, adjusted_radius * 2), pygame.SRCALPHA)
     alpha_surface.fill((0, 0, 0, 0))
-    pygame.draw.circle(alpha_surface, color + (int(255 * alpha),), (adjusted_radius, adjusted_radius), adjusted_radius)
+    pygame.draw.circle(
+        alpha_surface,
+        color + (int(255 * alpha),),
+        (adjusted_radius, adjusted_radius),
+        adjusted_radius,
+    )
     screen.blit(alpha_surface, (adjusted_position[0] - adjusted_radius, adjusted_position[1] - adjusted_radius))
 
-def draw_plot(screen, tree_scale, plot, alpha, stand_center, scale_factor, screen_size, tree_component=False, fill_color=(0,0,255)):
+def draw_plot(
+    screen,
+    tree_scale,
+    plot,
+    alpha,
+    stand_center,
+    scale_factor,
+    screen_size,
+    tree_component=False,
+    fill_color=(0, 0, 255),
+):
+    """Draw all trees belonging to a plot.
+
+    Args:
+        screen (pygame.Surface): Surface to draw on.
+        tree_scale (float): Scale factor applied to tree radii.
+        plot (Plot): Plot object containing trees.
+        alpha (float): Opacity value in ``[0, 1]``.
+        stand_center (tuple[float, float]): Stand center for coordinate transform.
+        scale_factor (float): Pixels per world unit.
+        screen_size (tuple[int, int]): Screen dimensions in pixels.
+        tree_component (bool, optional): When ``True``, scale by stem diameter.
+        fill_color (tuple[int, int, int], optional): RGB color for trees.
+
+    Returns:
+        None
+    """
     for tree in plot.trees:
-        draw_tree(screen, tree, tree_scale, fill_color, alpha, stand_center, scale_factor, screen_size, tree_component)
+        draw_tree(
+            screen,
+            tree,
+            tree_scale,
+            fill_color,
+            alpha,
+            stand_center,
+            scale_factor,
+            screen_size,
+            tree_component,
+        )
 
 def draw_chm(stems, screen, tree_scale, alpha, stand_center, scale_factor, screen_size, tree_component=False):
+    """Draw CHM-detected stems as circles.
+
+    Args:
+        stems (Iterable[Tree]): Collection of tree objects to render.
+        screen (pygame.Surface): Surface to draw on.
+        tree_scale (float): Scale factor applied to tree radii.
+        alpha (float): Opacity value in ``[0, 1]``.
+        stand_center (tuple[float, float]): Stand center for coordinate transform.
+        scale_factor (float): Pixels per world unit.
+        screen_size (tuple[int, int]): Screen dimensions in pixels.
+        tree_component (bool, optional): When ``True``, scale by stem diameter.
+
+    Returns:
+        None
+    """
     for tree in stems:
-        draw_tree(screen, tree, tree_scale, (107, 107, 107), alpha, stand_center, scale_factor, screen_size, tree_component)
+        draw_tree(
+            screen,
+            tree,
+            tree_scale,
+            (107, 107, 107),
+            alpha,
+            stand_center,
+            scale_factor,
+            screen_size,
+            tree_component,
+        )
 
 def draw_arrow(screen, arrow_position, target_position, color=(0, 0, 0)):
+    """Draw an arrow pointing toward a target position.
+
+    Args:
+        screen (pygame.Surface): Surface to draw on.
+        arrow_position (tuple[float, float]): Starting position of the arrow in
+            screen coordinates.
+        target_position (tuple[float, float]): Target screen coordinate that the
+            arrow should point to.
+        color (tuple[int, int, int], optional): RGB color of the arrow.
+
+    Returns:
+        None
+    """
     dx = target_position[0] - arrow_position[0]
     dy = target_position[1] - arrow_position[1]
     angle = np.arctan2(dy, dx)
@@ -257,12 +428,32 @@ def draw_arrow(screen, arrow_position, target_position, color=(0, 0, 0)):
     pygame.draw.polygon(screen, color, arrowhead_points)
 
 def draw_polygon(screen, points, color=(0, 255, 0)):
+    """Draw a polygon from a sequence of points.
+
+    Args:
+        screen (pygame.Surface): Surface to draw on.
+        points (list[tuple[int, int]]): Vertices of the polygon in screen
+            coordinates.
+        color (tuple[int, int, int], optional): RGB color of the polygon.
+
+    Returns:
+        None
+    """
     if len(points) > 1:
         pygame.draw.lines(screen, color, False, points, 3)
     for point in points:
         pygame.draw.circle(screen, color, point, 5)
 
 def is_point_in_polygon(point, polygon):
+    """Determine if a point lies within a polygon using ray casting.
+
+    Args:
+        point (tuple[float, float]): ``(x, y)`` coordinate to test.
+        polygon (list[tuple[float, float]]): Vertices of the polygon.
+
+    Returns:
+        bool: ``True`` if the point is inside the polygon, ``False`` otherwise.
+    """
     x, y = point
     n = len(polygon)
     inside = False
