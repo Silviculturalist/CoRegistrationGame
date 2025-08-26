@@ -281,6 +281,7 @@ class Stand:
             x_col = mapping.get('X', 'X_GROUND')
             y_col = mapping.get('Y', 'Y_GROUND')
             dbh_col = mapping.get('DBH', 'STEMDIAM')
+            h_col   = mapping.get('H', 'H')
             species_col = mapping.get('Species', 'Species')
             xc_col = mapping.get('XC', x_col)
             yc_col = mapping.get('YC', y_col)
@@ -292,6 +293,7 @@ class Stand:
             x_col = 'X_GROUND'
             y_col = 'Y_GROUND'
             dbh_col = 'STEMDIAM'
+            h_col = 'H'
             species_col = 'Species'
             xc_col = 'XC'
             yc_col = 'YC'
@@ -315,9 +317,21 @@ class Stand:
                 stemdiam_cm = float(row.get(dbh_col, 0))
             except (ValueError, TypeError):
                 stemdiam_cm = None
+            # Optional height (assumed meters) -> Tree expects decimeters
+            try:
+                height_m = float(row.get(h_col)) if h_col in row else None
+            except (ValueError, TypeError):
+                height_m = None
+            height_dm = height_m * 10 if height_m is not None else None
 
-            tree = Tree(tree_id, x=row.get(x_col), y=row.get(y_col),
-                        species=row.get(species_col), stemdiam_cm=stemdiam_cm)
+            tree = Tree(
+                tree_id,
+                x=row.get(x_col),
+                y=row.get(y_col),
+                species=row.get(species_col),
+                stemdiam_cm=stemdiam_cm,
+                height_dm=height_dm,
+            )
             # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:
