@@ -1,158 +1,156 @@
 import numpy as np
-from scipy.spatial.distance import cdist
 from scipy.spatial import cKDTree
 
+
 class FractionalICP:
-    def __init__(self, source, target, lambda_val=3.0, threshold=1e-6, max_iterations=1000):
+    def __init__(
+        self,
+        source,
+        target,
+        lambda_val=3.0,
+        threshold=1e-6,
+        max_iterations=1000,
+        allow_reflection=False,
+    ):
         """
-        Fractional ICP algorithm to align source to target.
-        :param source: array-like, source points.
-        :param target: array-like, target points.
-        :param lambda_val: lambda value parameter.
-        :param threshold: convergence threshold.
-        :param max_iterations: maximum number of iterations.
+        Fractional ICP (rigid 2D only):
+          • Finds correspondences / FRMSD in 3D (so Z marks are respected).
+          • Solves a rigid planar transform (rotation + XY translation, no scaling).
+          • Applies it only to XY; Z and extra columns are left unchanged.
+
+        Parameters
+        ----------
+        source, target : array-like, shape (N, D)
+            Point sets. If D >= 3, FRMSD/correspondences use XYZ; XY moves only.
+        lambda_val : float
+            FRMSD lambda (reset internally between stages).
+        threshold : float
+            Convergence threshold on FRMSD improvement.
+        max_iterations : int
+            Maximum iterations per stage.
+        allow_reflection : bool
+            If False, enforce det(R) = +1 (no flips).
         """
-        self.source = np.array(source)
-        self.target = np.array(target)
+        self.source = np.array(source, dtype=float)
+        self.target = np.array(target, dtype=float)
+
+        if self.source.ndim != 2 or self.target.ndim != 2:
+            raise ValueError("source and target must be 2D arrays (N, D).")
+        if self.source.shape[0] == 0 or self.target.shape[0] == 0:
+            raise ValueError("source and target must be non-empty.")
+
+        self.match_dims = 3 if (self.source.shape[1] >= 3 and self.target.shape[1] >= 3) else 2
         self.lambda_val = lambda_val
         self.threshold = threshold
         self.max_iterations = max_iterations
+        self.allow_reflection = allow_reflection
 
+    # ----------------- helpers -----------------
+    def _xy(self, pts):
+        return np.ascontiguousarray(pts[:, :2])
+
+    def _xyz_or_xy(self, pts):
+        return np.ascontiguousarray(pts[:, :self.match_dims])
+
+    # ----------------- FRMSD & matching -----------------
     def frmsd(self, fraction, num_elements, subset_source, corresponding_targets):
-        """
-        Fractional Root Mean Squared Distance.
-        :param fraction: fraction of points considered.
-        :param num_elements: number of elements used in subset.
-        :param subset_source: subset of source points.
-        :param corresponding_targets: corresponding target points.
-        :return: FRMSD value.
-        """
-        if len(subset_source) == 0:
-            return float('inf')
-        return (1 / (fraction ** self.lambda_val)) * np.sqrt(np.sum((subset_source - corresponding_targets) ** 2) / num_elements)
+        """Fractional RMSD computed in XYZ (or XY if no Z)."""
+        if num_elements == 0:
+            return float("inf")
+        diff = self._xyz_or_xy(subset_source) - self._xyz_or_xy(corresponding_targets)
+        rmse = np.sqrt(np.sum(diff**2) / num_elements)
+        return (1.0 / (fraction ** self.lambda_val)) * rmse
 
     def get_n_first_elements(self, num_elements, distances):
-        """
-        Return indices of the smallest num_elements in distances.
-        """
-        sorted_indices = np.argsort(distances)
-        return sorted_indices[:num_elements]
+        return np.argsort(distances)[:num_elements]
 
     def find_correspondences(self, source, target):
-        """
-        Find the closest target for each source point (Euclidean).
-        Uses a KD-tree for speed on larger inputs.
-        Returns:
-            (targets[np.ndarray], dists[np.ndarray])
-        """
         if len(target) == 0 or len(source) == 0:
             return np.empty_like(source), np.array([])
-        tree = cKDTree(target)
-        dists, idx = tree.query(source, k=1)
+        tree = cKDTree(self._xyz_or_xy(target))
+        dists, idx = tree.query(self._xyz_or_xy(source), k=1)
         return target[idx], dists
 
     def find_optimal_fraction(self, corresponding_targets, distances):
-        """
-        Find the optimal fraction (subset size) of points that minimizes the FRMSD.
-        """
-        current_frmsd = float('inf')
-        optimal_fraction = 0
-        optimal_num_elements = 0
-        total_points = len(self.source)
-        for num_elements in range(1, total_points + 1):
-            fraction = num_elements / total_points
-            selected_indices = np.argsort(distances)[:num_elements]
-            subset_source = self.source[selected_indices]
-            subset_corresponding_targets = corresponding_targets[selected_indices]
-            new_frmsd = self.frmsd(fraction, num_elements, subset_source, subset_corresponding_targets)
-            if new_frmsd < current_frmsd:
-                current_frmsd = new_frmsd
-                optimal_fraction = fraction
-                optimal_num_elements = num_elements
-        return optimal_fraction, optimal_num_elements
+        """Pick the subset size that minimizes FRMSD."""
+        N = len(self.source)
+        if N == 0:
+            return 0.0, 0
+        order = np.argsort(distances)
+        best_val, best_frac, best_N = float("inf"), 0.0, 0
+        for k in range(1, N + 1):
+            frac = k / N
+            sel = order[:k]
+            val = self.frmsd(frac, k, self.source[sel], corresponding_targets[sel])
+            if val < best_val:
+                best_val, best_frac, best_N = val, frac, k
+        return best_frac, best_N
 
-    def compute_optimal_transform(self, source_subset, target_subset):
-        """
-        Compute 2D rotation and translation to align source_subset to target_subset.
-        """
-        # Compute centroids
-        centroid_source = np.mean(source_subset[:, :2], axis=0)
-        centroid_target = np.mean(target_subset[:, :2], axis=0)
-        # Center the points
-        centered_source = source_subset[:, :2] - centroid_source
-        centered_target = target_subset[:, :2] - centroid_target
-        # Compute covariance matrix
-        H = np.dot(centered_source.T, centered_target)
+    # ----------------- rigid 2D transform -----------------
+    def compute_optimal_transform_2d(self, source_subset, target_subset):
+        """Compute 2D rigid transform (rotation + translation, no scaling)."""
+        X = self._xy(source_subset)
+        Y = self._xy(target_subset)
+        cs = X.mean(axis=0)
+        ct = Y.mean(axis=0)
+        Xc = X - cs
+        Yc = Y - ct
+
+        H = Xc.T @ Yc
         U, _, Vt = np.linalg.svd(H)
-        R = np.dot(Vt.T, U.T)
-        if np.linalg.det(R) < 0:
+        R = Vt.T @ U.T
+        if not self.allow_reflection and np.linalg.det(R) < 0:
             Vt[-1, :] *= -1
-            R = np.dot(Vt.T, U.T)
-        # Build a 4x4 transformation matrix (2D transform embedded in 3D homogeneous coordinates)
-        R_3D = np.eye(4)
-        R_3D[:2, :2] = R
-        translation_3D = np.zeros(3)
-        translation_3D[:2] = centroid_target - np.dot(R, centroid_source)
-        R_3D[:3, 3] = translation_3D
-        return R_3D
+            R = Vt.T @ U.T
 
-    def apply_transform(self, source, R_3D):
-        """
-        Apply 2D transformation (rotation and translation) to source points.
-        """
-        points_homogeneous = np.hstack((source, np.ones((source.shape[0], 1))))
-        transformed_points_homogeneous = np.dot(points_homogeneous, R_3D.T)
-        transformed_points = transformed_points_homogeneous[:, :3] / transformed_points_homogeneous[:, [3]]
-        return transformed_points
+        t = ct - (cs @ R.T)
 
+        T = np.eye(3)
+        T[:2, :2] = R
+        T[:2, 2] = t
+        return T
+
+    def apply_transform_2d_xy_only(self, points, T):
+        """Apply 2D rigid transform to XY only; preserve Z and other attributes."""
+        out = points.copy()
+        xy = self._xy(points)
+        ones = np.ones((xy.shape[0], 1))
+        xy_t = (np.hstack([xy, ones]) @ T.T)[:, :2]
+        out[:, :2] = xy_t
+        return out
+
+    # ----------------- ICP loop -----------------
     def _iterate(self):
-        """
-        Perform iterative transformation updates until convergence.
-        """
-        corresponding_targets, distances = self.find_correspondences(self.source, self.target)
-        optimal_fraction, optimal_num_elements = self.find_optimal_fraction(corresponding_targets, distances)
-        selected_indices = self.get_n_first_elements(optimal_num_elements, distances)
-        current_frmsd = self.frmsd(
-            optimal_fraction,
-            optimal_num_elements,
-            self.source[selected_indices],
-            corresponding_targets[selected_indices],
-        )
-        improvement = float('inf')
-        iteration = 0
-        while improvement > self.threshold and iteration < self.max_iterations:
-            selected_indices = self.get_n_first_elements(optimal_num_elements, distances)
-            source_subset = self.source[selected_indices]
-            corresponding_subset = corresponding_targets[selected_indices]
-            R_3D = self.compute_optimal_transform(source_subset, corresponding_subset)
-            self.source = self.apply_transform(self.source, R_3D)
-            corresponding_targets, distances = self.find_correspondences(self.source, self.target)
-            optimal_fraction, optimal_num_elements = self.find_optimal_fraction(corresponding_targets, distances)
-            selected_indices = self.get_n_first_elements(optimal_num_elements, distances)
-            new_frmsd = self.frmsd(
-                optimal_fraction,
-                optimal_num_elements,
-                self.source[selected_indices],
-                corresponding_targets[selected_indices],
-            )
-            improvement = current_frmsd - new_frmsd
+        corr, d = self.find_correspondences(self.source, self.target)
+        frac, k = self.find_optimal_fraction(corr, d)
+        if k == 0:
+            return self.source
+
+        sel = self.get_n_first_elements(k, d)
+        current_frmsd = self.frmsd(frac, k, self.source[sel], corr[sel])
+
+        it = 0
+        while it < self.max_iterations:
+            sel = self.get_n_first_elements(k, d)
+            T = self.compute_optimal_transform_2d(self.source[sel], corr[sel])
+            self.source = self.apply_transform_2d_xy_only(self.source, T)
+
+            corr, d = self.find_correspondences(self.source, self.target)
+            frac, k = self.find_optimal_fraction(corr, d)
+            sel = self.get_n_first_elements(k, d)
+            new_frmsd = self.frmsd(frac, k, self.source[sel], corr[sel])
+
+            if current_frmsd - new_frmsd <= self.threshold:
+                break
             current_frmsd = new_frmsd
-            iteration += 1
+            it += 1
+
         return self.source
 
     def run(self):
-        """
-        Execute the Fractional ICP algorithm with two-stage iteration.
-        """
-        # First iteration
+        """Two-stage Fractional ICP (rigid only)."""
         self._iterate()
-        # Adjust lambda based on dimensionality
-        if self.source.shape[1] == 3:
-            self.lambda_val = 0.95
-        elif self.source.shape[1] == 2:
-            self.lambda_val = 1.3
-        else:
-            return self.source
-        # Second iteration with updated lambda
+        self.lambda_val = 0.95 if self.match_dims == 3 else 1.3
         self._iterate()
         return self.source
+
