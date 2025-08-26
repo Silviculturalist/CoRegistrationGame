@@ -54,11 +54,13 @@ class App:
         scale_factor (float): Pixels per world unit for the viewport.
         output_folder (str): Optional user-selected folder for tree CSV outputs.
     """
-    def __init__(self, root, plot_stand, chm_stand, plot_centers, startup_root= None):
+    def __init__(self, root, plot_stand, chm_stand, plot_centers, startup_root=None, output_folder=None):
         self.root = root
         self.window_active = True  # assume active initially
-        self.startup_root = startup_root #To restore reference to startup menu.
-        self.output_folder = output_folder
+        self.startup_root = startup_root  # To restore reference to startup menu.
+        # Default to ./Output if none provided (CLI path, tests, etc.)
+        self.output_folder = output_folder or os.path.join(os.getcwd(), "Output")
+        os.makedirs(self.output_folder, exist_ok=True)
         # Bind both tkinter focus events (in case the overall app loses focus)
         self.root.bind("<FocusIn>", self.on_focus_in)
         self.root.bind("<FocusOut>", self.on_focus_out)
@@ -514,6 +516,9 @@ class App:
 
     def join_plot(self):
         if self.current_plot:
+            if not self.chm_stand.trees:
+                self.flash_message("No CHM trees to match against")
+                return
             source_array = self.current_plot.get_tree_current_array()[:, -3:]
             target_array = np.array([[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees])
             icp = FractionalICP(source_array, target_array)
@@ -534,21 +539,6 @@ class App:
             next_plot_index = self.remaining_plots[0]
         self.current_plot_index = next_plot_index
         self.current_plot = self.plot_stand.plots[self.current_plot_index]
-        self.update_listboxes()
-
-    def mark_unplaceable(self):
-        """Record a placeholder (NA) transformation and advance to the next remaining plot."""
-        if not self.remaining_plots:
-            return
-        # Store NA transform and move current plot from remaining -> completed.
-        self.store_transformations(self.current_plot, fail=True)
-        if self.current_plot_index in self.remaining_plots:
-            idx_in_queue = self.remaining_plots.index(self.current_plot_index)
-            self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
-        # Advance to next plot in the queue if any.
-        if self.remaining_plots:
-            self.current_plot_index = self.remaining_plots[0]
-            self.current_plot = self.plot_stand.plots[self.current_plot_index]
         self.update_listboxes()
 
     def mark_unplaceable(self):
@@ -1061,5 +1051,7 @@ if __name__ == "__main__":
         # PlotCenters expects only the Stand.
         my_plot_centers = PlotCenters(my_data)
     root = tk.Tk()
-    app = App(root, my_data, my_chm, my_plot_centers)
+    default_out = os.path.join(os.getcwd(), "Output")
+    os.makedirs(default_out, exist_ok=True)
+    app = App(root, my_data, my_chm, my_plot_centers, output_folder=default_out)
     root.mainloop()
