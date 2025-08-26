@@ -42,6 +42,9 @@ class Tree:
         self.original_plot = original_plot
         self.species = species
         self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
+
+        # Store provided measurements in meters without automatic imputation.
+
         self.stemdiam = stemdiam_cm / 100 if stemdiam_cm is not None else None
         self.height = height_dm / 10 if height_dm is not None else None
 
@@ -58,11 +61,12 @@ class Tree:
         """Diameter (m) from height (m) by inverting Näslund via 1D minimize."""
         params = self.naslund_params or self.NASLUND_DEFAULT
 
+
         def find_diameter(height: float, *params: float) -> float:
             def objective(x):
                 return (height - self.naslund_1936(x, *params)) ** 2
 
-            result = minimize_scalar(objective, bounds=(0, 100), method='bounded')
+            result = minimize_scalar(objective, bounds=(0, 100), method="bounded")
             return result.x
 
         return min(find_diameter(height, *params), 1.5)
@@ -82,6 +86,7 @@ class Tree:
         if naslund_params is not None:
             self.naslund_params = tuple(naslund_params)
         self.stemdiam = self.get_diameter(self.height)
+
 
 
 
@@ -296,13 +301,18 @@ class Stand:
         file_path,
         mapping: Optional[Dict[str, str]] = None,
         sep: str = '\t',
-        impute_dbh: bool = False,
-        impute_h: bool = False,
+        impute_dbh: bool = True,
+        impute_h: bool = True,
         naslund_params: Optional[Tuple[float, float, float]] = None,
     ):
         self.standid = ID
         self.plots = []
         self.center = None
+        self.impute_dbh = impute_dbh
+        self.impute_h = impute_h
+        self.naslund_params = (
+            tuple(naslund_params) if naslund_params is not None else None
+        )
 
         # Read CSV using the provided separator.
         reader = pd.read_csv(file_path, sep=sep).to_dict(orient='records')
@@ -368,12 +378,16 @@ class Stand:
                 species=row.get(species_col),
                 stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
-                naslund_params=naslund_params if (impute_dbh or impute_h) else None,
+
+                naslund_params=self.naslund_params
+                if (self.impute_dbh or self.impute_h)
+                else None,
             )
-            if impute_h:
-                tree.impute_height(naslund_params)
-            if impute_dbh:
-                tree.impute_dbh(naslund_params)
+            if self.impute_h:
+                tree.impute_height(self.naslund_params)
+            if self.impute_dbh:
+                tree.impute_dbh(self.naslund_params)
+
             # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:

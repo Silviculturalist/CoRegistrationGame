@@ -169,7 +169,9 @@ class CHMPlot(Plot):
                 y=row[y_col],
                 stemdiam_cm=stemdiam_value,
                 height_dm=height,
-                naslund_params=self.naslund_params if (self.impute_dbh or self.impute_h) else None,
+                naslund_params=self.naslund_params
+                if (self.impute_dbh or self.impute_h)
+                else None,
             )
             if self.impute_h:
                 tree.impute_height(self.naslund_params)
