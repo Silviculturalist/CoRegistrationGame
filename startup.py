@@ -5,22 +5,17 @@ from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from scipy.optimize import minimize_scalar
 import logging
 # Import the new modular components:
 from trees import Stand, SavedStand
-from chm_plot import CHMPlot, SavedPlot, PlotCenters, plot_height_curve
+from chm_plot import (
+    CHMPlot,
+    SavedPlot,
+    PlotCenters,
+    Naslund1936kwargs,
+    plot_height_curve,
+)
 # Note: the main application is launched from app.App
-
-def Naslund1936kwargs(diameter, *params):
-    return 1.3 + (diameter / (params[0] + params[1] * diameter)) ** params[2]
-
-def getDiameter(height, *params):
-    def findDiameter(height, *params):
-        def objective(x):
-            return (height - Naslund1936kwargs(x, *params)) ** 2
-        return minimize_scalar(objective, bounds=(0, 100), method='bounded').x
-    return min(findDiameter(height, *params), 1.5)
 
 def update_column_options(file_path, sep, comboboxes, mapping_vars):
     if file_path.endswith('.csv'):
