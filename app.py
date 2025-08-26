@@ -39,6 +39,21 @@ ZOOM_STEP = 0.3
 TREE_SCALE_INITIAL = 1.0
 
 class App:
+    """Main application integrating a Tkinter control panel and a Pygame viewport.
+
+    Attributes:
+        root (tk.Tk | tk.Toplevel): Parent Tk window for controls and widgets.
+        plot_stand (Stand): Layer 1 stand with plots to be registered.
+        chm_stand (Plot): Layer 2 stems (CHM or saved data as a single Plot-like object).
+        plot_centers (PlotCenters | None): Optional helper for drawing plot centers.
+        display_mode (int): 0=all layer2, 1=unmatched layer2, 2=end result (both).
+        current_plot_index (int): Index into plot_stand.plots for the active plot.
+        remaining_plots (list[int]): Queue of plot indices yet to be confirmed.
+        completed_plots (list[int]): Stack of plot indices already confirmed.
+        stand_center (tuple[float, float]): View center in world units.
+        scale_factor (float): Pixels per world unit for the viewport.
+        output_folder (str): Optional user-selected folder for tree CSV outputs.
+    """
     def __init__(self, root, plot_stand, chm_stand, plot_centers, startup_root= None):
         self.root = root
         self.window_active = True  # assume active initially
@@ -77,6 +92,16 @@ class App:
         self.create_ui()
         self.after_id = None
         self.run_pygame()
+
+    def update_caption(self):
+        """Set the Pygame window title with Stand/Plot context."""
+        try:
+            plotid = self.current_plot.plotid if self.current_plot else "None"
+            pygame.display.set_caption(
+                f"Co-Registration Game — Stand {self.plot_stand.standid} — Plot {plotid}"
+            )
+        except Exception:
+            pygame.display.set_caption("Co-Registration Game")
 
     def start_listener(self):
         """Start the pynput keyboard listener if not already running."""
@@ -278,19 +303,25 @@ class App:
             self.update_listboxes()
 
     def run_pygame(self):
-     
-        os.environ['SDL_VIDEODRIVER'] = 'windib'
+        # Only set windib on Windows for compatibility on other platforms.
+        if platform.system() == "Windows":
+            os.environ.setdefault('SDL_VIDEODRIVER', 'windib')
         pygame.init()
-            # Create a font for flash messages.
+        # Create a font for flash messages.
         self.font = pygame.font.SysFont(None, 36)
         self.screen_size = (800, 600)
-        self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE | pygame.HWSURFACE | pygame.DOUBLEBUF)
+        # Use SCALED | RESIZABLE for smoother resizing in windowed mode.
+        self.screen = pygame.display.set_mode(
+            self.screen_size, pygame.SCALED | pygame.RESIZABLE
+        )
+        self.update_caption()
 
         self.root.lower() #Send tk window to back
 
         self.running = True
         # Start the listener initially.
         self.start_listener()
+        clock = pygame.time.Clock()
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -341,9 +372,14 @@ class App:
             #Draw flash message if active
             self.draw_flash_message()
 
-            
             pygame.display.flip()
-            self.root.update()
+            try:
+                self.root.update()
+            except tk.TclError:
+                # Tk window destroyed; stop gracefully
+                self.running = False
+            # Cap frame rate to reduce CPU load
+            clock.tick(60)
 
     def draw_flash_message(self):
         """Draws the flash message on the pygame screen if it is still active."""
@@ -413,9 +449,10 @@ class App:
             self.tree_scale *= 0.9
         elif key == '8':
             self.tree_scale = TREE_SCALE_INITIAL
-        elif key == 'r':
-            self.rotate_plot('left')
+        # Align with README: E=counterclockwise (left), R=clockwise (right).
         elif key == 'e':
+            self.rotate_plot('left')
+        elif key == 'r':
             self.rotate_plot('right')
 
     def pan(self, direction):
@@ -480,8 +517,33 @@ class App:
             self.current_plot.update_tree_positions(new_coords)
 
     def ignore_plot(self):
-        self.current_plot_index = (self.current_plot_index + 1) % len(self.remaining_plots)
-        self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
+        """Skip to the next remaining plot without altering queues or writing transforms."""
+        if not self.remaining_plots:
+            return
+        # Find the current plot's position in the remaining queue.
+        if self.current_plot_index in self.remaining_plots:
+            pos = self.remaining_plots.index(self.current_plot_index)
+            next_plot_index = self.remaining_plots[(pos + 1) % len(self.remaining_plots)]
+        else:
+            # If current plot isn't in remaining (e.g., already completed), go to the first remaining.
+            next_plot_index = self.remaining_plots[0]
+        self.current_plot_index = next_plot_index
+        self.current_plot = self.plot_stand.plots[self.current_plot_index]
+        self.update_listboxes()
+
+    def mark_unplaceable(self):
+        """Record a placeholder (NA) transformation and advance to the next remaining plot."""
+        if not self.remaining_plots:
+            return
+        # Store NA transform and move current plot from remaining -> completed.
+        self.store_transformations(self.current_plot, fail=True)
+        if self.current_plot_index in self.remaining_plots:
+            idx_in_queue = self.remaining_plots.index(self.current_plot_index)
+            self.completed_plots.append(self.remaining_plots.pop(idx_in_queue))
+        # Advance to next plot in the queue if any.
+        if self.remaining_plots:
+            self.current_plot_index = self.remaining_plots[0]
+            self.current_plot = self.plot_stand.plots[self.current_plot_index]
         self.update_listboxes()
 
     def remove_plot(self):
@@ -529,18 +591,27 @@ class App:
     def save_files(self):
         """Save trees and transformation files."""
         df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient='index')
+        # Preserve Plot IDs as a column in the CSV.
+        df_transform.index.name = 'PlotID'
+        df_transform = df_transform.reset_index()
         transformation_dir = './Transformations'
         if not os.path.isdir(transformation_dir):
             os.mkdir(transformation_dir)
-        df_transform.to_csv(f'{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv', index=False)
+        df_transform.to_csv(
+            f'{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv',
+            index=False,
+        )
 
         if isinstance(self.plot_stand, SavedStand):
             self.plot_stand.write_out().to_csv(f'{self.plot_stand.fp}', index=False)
         else:
-            tree_dir = './Trees'
+            # Use selected output folder if provided by Startup Menu, else default.
+            tree_dir = getattr(self, "output_folder", "./Trees")
             if not os.path.isdir(tree_dir):
                 os.mkdir(tree_dir)
-            self.plot_stand.write_out().to_csv(f'{tree_dir}/Stand_{self.plot_stand.standid}_trees.csv', index=False)
+            self.plot_stand.write_out().to_csv(
+                f'{tree_dir}/Stand_{self.plot_stand.standid}_trees.csv', index=False
+            )
 
     def show_success_dialog(self):
         """Show a dialog after a successful save with options to show files, continue, or exit."""
@@ -669,6 +740,7 @@ class App:
 
 
     def store_transformations(self, plot, fail=False):
+        """Store per-plot transformation details for later CSV export."""
         if not plot.trees:
             # If the plot is empty, store NA values.
             self.plot_transformations[plot.plotid] = {
@@ -703,11 +775,12 @@ class App:
             self.current_plot.reset_transformations()
 
     def step_back(self):
+        """Restore the last confirmed plot back to the remaining queue and make it current."""
         if self.completed_plots:
-            last_completed = self.completed_plots.pop()
+            last_completed = self.completed_plots.pop()  # this is a plot index
             self.remaining_plots.insert(0, last_completed)
-            self.current_plot_index = 0
-            self.current_plot = self.plot_stand.plots[self.remaining_plots[self.current_plot_index]]
+            self.current_plot_index = self.remaining_plots[0]
+            self.current_plot = self.plot_stand.plots[self.current_plot_index]
             if self.current_plot.plotid in self.plot_transformations:
                 self.plot_transformations.pop(self.current_plot.plotid)
             self.chm_stand.restore_matches()
@@ -750,9 +823,13 @@ class App:
         # Remove selected trees from their original plots and add them to the new plot.
         for tree, plot in trees_to_move:
             logging.info(f"Removing Tree {tree.tree_id} from Plot {plot.plotid}")
+            # Remember original plot and preserve current coordinates across append/reset.
+            tree.original_plot = plot
+            cx, cy = tree.currentx, tree.currenty
             if tree in plot.trees:
                 plot.trees.remove(tree)
             new_plot.append_tree(tree)
+            tree.currentx, tree.currenty = cx, cy
 
         # Record transformations for affected plots.
         for plot in set([p for (_, p) in trees_to_move]):
@@ -966,7 +1043,8 @@ if __name__ == "__main__":
     else:
         my_data = Stand(ID=sys.argv[1], file_path=sys.argv[2])
         my_chm = CHMPlot(file_path=sys.argv[3], x=my_data.center[0], y=my_data.center[1], dist=70)
-        my_plot_centers = PlotCenters(sys.argv[2], my_data)
+        # PlotCenters expects only the Stand.
+        my_plot_centers = PlotCenters(my_data)
     root = tk.Tk()
     app = App(root, my_data, my_chm, my_plot_centers)
     root.mainloop()
