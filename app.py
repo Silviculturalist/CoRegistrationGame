@@ -131,7 +131,7 @@ class App:
     def _plot_by_id(self, plotid):
         """Return (index, plot) for the given PlotID or (None, None) if not found."""
         for i, p in enumerate(self.plot_stand.plots):
-            if p.plotid == plotid:
+            if str(p.plotid) == str(plotid):
                 return i, p
         return None, None
 
@@ -317,7 +317,7 @@ class App:
     def on_remaining_plot_select(self, event):
         selection = event.widget.curselection()
         if selection:
-            selected_plotid = int(event.widget.get(selection[0]))
+            selected_plotid = event.widget.get(selection[0])  # keep as string; robust for non-numeric IDs
             idx, plot = self._plot_by_id(selected_plotid)
             if plot is not None:
                 self.current_plot_index = idx
@@ -382,22 +382,22 @@ class App:
                             logging.info("Pygame window gained focus: restarted keyboard listener.")
             self.screen.fill((255, 255, 255))
             # Draw CHM and plots based on display_mode.
-            if self.chm_stand.trees: 
+            if self.chm_stand.trees:
                 if self.display_mode == 0:
-                    # Draw all trees.
-                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
-                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
+                    # Draw all CHM trees (by HEIGHT)
+                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale,
+                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=False)
                 elif self.display_mode == 1:
-                    # Draw only unmatched trees.
-                    draw_chm(stems=self.chm_stand.trees, screen=self.screen, tree_scale=self.tree_scale, 
-                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
+                    # Draw only unmatched CHM trees (by HEIGHT)
+                    draw_chm(stems=self.chm_stand.trees, screen=self.screen, tree_scale=self.tree_scale,
+                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=False)
                 elif self.display_mode == 2:
-                    # Draw end result: both matched and unmatched trees.
-                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale, 
-                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=True)
+                    # Draw end result: both matched and unmatched CHM trees (by HEIGHT)
+                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale,
+                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=False)
                     for i, plot in enumerate(self.plot_stand.plots):
                         draw_plot(screen=self.screen, tree_scale=self.tree_scale, plot=plot, alpha=1,
-                                  stand_center=self.stand_center, scale_factor=self.scale_factor, 
+                                  stand_center=self.stand_center, scale_factor=self.scale_factor,
                                   screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
 
             if self.current_plot:
@@ -593,8 +593,27 @@ class App:
         if not self.chm_stand.trees:
             self.flash_message("No CHM trees to match against")
             return
-        source_array = self.current_plot.get_tree_current_array()[:, -3:]
-        target_array = np.array([[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees])
+        # Build candidate 3D arrays (x, y, height) and fall back to 2D if any height is missing.
+        src_3d = self.current_plot.get_tree_current_array()[:, -3:]
+        tgt_3d = np.array([[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees], dtype=object)
+
+        use_3d = True
+        try:
+            src_h = src_3d[:, 2].astype(float)
+            tgt_h = tgt_3d[:, 2].astype(float)
+            if np.isnan(src_h).any() or np.isnan(tgt_h).any():
+                use_3d = False
+        except Exception:
+            use_3d = False
+
+        if use_3d:
+            source_array = src_3d.astype(float)
+            target_array = tgt_3d.astype(float)
+        else:
+            # Fallback: 2D ICP on x,y only
+            source_array = self.current_plot.get_tree_current_array()[:, 1:3].astype(float)
+            target_array = np.array([[tree.x, tree.y] for tree in self.chm_stand.trees], dtype=float)
+
         icp = FractionalICP(source_array, target_array)
         icp.run()
         new_coords = icp.source[:, :2]
@@ -636,8 +655,11 @@ class App:
 
     def remove_plot(self):
         if self.current_plot in self.new_plots:
-            for tree in self.current_plot.trees:
+            # Preserve current coordinates when moving trees back
+            for tree in list(self.current_plot.trees):
+                cx, cy = tree.currentx, tree.currenty
                 tree.original_plot.append_tree(tree)
+                tree.currentx, tree.currenty = cx, cy
             self.plot_stand.plots.remove(self.current_plot)
             self.new_plots.remove(self.current_plot)
             self._rebuild_id_queues()
@@ -925,8 +947,14 @@ class App:
                     return  # Exit without making any changes.
 
         # Otherwise, proceed with splitting the trees into a new plot.
-        # Determine the new plot ID.
-        new_plot_id = max(p.plotid for p in self.plot_stand.plots) + 1 if self.plot_stand.plots else 1
+        # Determine a robust new PlotID even for non-numeric IDs.
+        existing_ids = {str(p.plotid) for p in self.plot_stand.plots}
+        base = str(self.current_plot.plotid) if self.current_plot else "Plot"
+        i = 1
+        new_plot_id = f"{base}_split{i}"
+        while new_plot_id in existing_ids:
+            i += 1
+            new_plot_id = f"{base}_split{i}"
         from trees import Plot  # Avoid circular dependency.
         new_center = np.mean(np.array(polygon_points), axis=0)
         new_plot = Plot(new_plot_id, center=new_center)
@@ -1082,10 +1110,15 @@ class PolygonDrawingWindow:
             color = grey_from_plotid(plot.plotid)
             for tree in plot.trees:
                 pos = self.geo_to_canvas((tree.currentx, tree.currenty))
-                # Use the same scaling as in the main window:
-                r = max(int(tree.stemdiam * 10 * self.scale / 2), 1) * self.parent_app.tree_scale
+                # Use the same scaling as in the main window (guard for missing DBH):
+                try:
+                    dbh_m = float(tree.stemdiam) if tree.stemdiam is not None else 0.0
+                except (TypeError, ValueError):
+                    dbh_m = 0.0
+                raw = (dbh_m * 10.0 * self.scale / 2.0) * self.parent_app.tree_scale
+                r = max(int(round(raw)), 1)
                 self.canvas.create_oval(pos[0]-r, pos[1]-r, pos[0]+r, pos[1]+r,
-                                         fill=color, outline=color)
+                                        fill=color, outline=color)
         # Draw the polygon (if any) on top.
         if len(self.polygon_points) > 1:
             canvas_points = [self.geo_to_canvas(pt) for pt in self.polygon_points]
