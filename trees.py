@@ -139,17 +139,37 @@ class Plot:
 
 
     def get_transform(self):
+        """Compute the rigid 2D transform from original to current tree positions.
+
+        Uses a Procrustes-style solution (SVD) to estimate rotation (R) and
+        translation (t) between the source coordinates (X, Y) at load time and
+        the current coordinates after interactive edits.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray, bool]:
+                - R: (2, 2) rotation matrix (counterclockwise positive).
+                - t: (2,) translation vector such that current ≈ R @ source + t.
+                - flipped: Whether a vertical flip has been applied.
+
+        Raises:
+            ValueError: If there are no trees in the plot.
+        """
         source_array = self.get_tree_source_array()[:, 1:3]
         target_array = self.get_tree_current_array()[:, 1:3]
-        source_centered = source_array - np.mean(source_array, axis=0)
-        target_centered = target_array - np.mean(target_array, axis=0)
+        if source_array.size == 0 or target_array.size == 0:
+            raise ValueError("No trees available to compute transform.")
+        mu_s = np.mean(source_array, axis=0)
+        mu_t = np.mean(target_array, axis=0)
+        source_centered = source_array - mu_s
+        target_centered = target_array - mu_t
         H = np.dot(source_centered.T, target_centered)
         U, S, Vt = np.linalg.svd(H)
         R = np.dot(Vt.T, U.T)
         if np.linalg.det(R) < 0:
             Vt[-1, :] *= -1
             R = np.dot(Vt.T, U.T)
-        t = np.mean(target_array, axis=0) - np.mean(source_array, axis=0)
+        # Correct Procrustes translation: t = mu_t - R.dot(mu_s)
+        t = mu_t - R.dot(mu_s)
         return R, t, self.flipped
 
     def append_tree(self, tree):
