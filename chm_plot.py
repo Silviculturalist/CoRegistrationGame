@@ -52,6 +52,24 @@ def get_viewport_scale(stand, screen_size):
 
 class CHMPlot(Plot):
     def __init__(self, file_path, x=None, y=None, dist=40, height_unit='m', mapping=None, sep='\t'):
+        """Load CHM detections as a single 'plot' and optionally crop by distance.
+
+        Args:
+            file_path (str): Path to CSV with CHM detections.
+            x (float | None): Center X (world units) for radial crop; if None, no crop.
+            y (float | None): Center Y (world units) for radial crop; if None, no crop.
+            dist (float): Crop radius in world units when x,y are provided.
+            height_unit (str): Unit of the height column: 'm', 'dm', or 'cm'.
+            mapping (dict | None): Optional column mapping keys: {'X','Y','H','TreeID','DBH'}.
+            sep (str): CSV separator character.
+
+        Notes:
+            Internally, height is stored in meters and stem diameter in meters.
+            The input height is converted to decimeters (height_dm) to match Tree's init.
+        Raises:
+            FileNotFoundError: If the file cannot be read.
+            KeyError: If required columns are missing after mapping.
+        """
         self.trees = []
         self.plotid = 1
         # Read CSV into a DataFrame.
@@ -106,12 +124,22 @@ class CHMPlot(Plot):
             # Optionally skip trees with unrealistic heights.
             if height is not None and height > 450:
                 continue
-            
-            tree = Tree(tree_id=row[idals_col], x=row[x_col], y=row[y_col],
-                        stemdiam_cm=stemdiam_value, height_dm=height)
+
+            tree = Tree(
+                tree_id=row[idals_col],
+                x=row[x_col],
+                y=row[y_col],
+                stemdiam_cm=stemdiam_value,
+                height_dm=height,
+            )
             self.append_tree(tree)
 
-        self.center = np.mean(np.array([[tree.x, tree.y] for tree in self.trees]), axis=0)
+        pts = np.array([[tree.x, tree.y] for tree in self.trees])
+        if len(pts):
+            self.center = np.mean(pts, axis=0)
+        else:
+            # Avoid NaNs when CHM is empty post-filtering
+            self.center = np.array([0.0, 0.0])
         self.removed_stems = []
         self.alltrees = deepcopy(self.trees)
 
