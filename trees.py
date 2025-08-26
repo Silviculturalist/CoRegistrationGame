@@ -335,8 +335,9 @@ class Stand:
         for row in reader:
             plot_id = row.get(plot_col)
             tree_id = row.get(tree_col)
+            raw_dbh = row.get(dbh_col) if dbh_col in row else None
             try:
-                stemdiam_cm = float(row.get(dbh_col, 0))
+                stemdiam_cm = float(raw_dbh) if raw_dbh not in (None, "") else None
             except (ValueError, TypeError):
                 stemdiam_cm = None
             # Optional height (meters) -> decimeters for Tree
