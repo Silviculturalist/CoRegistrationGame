@@ -63,14 +63,15 @@ def bring_window_to_front(window):
     except Exception as e:
         logging.error(f"Error bringing window to front: {e}")
 
-def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mapping, 
-                  file_sep, chm_sep, file_calculate_dbh, file_calculate_h, 
+def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mapping,
+                  file_sep, chm_sep, file_calculate_dbh, file_calculate_h,
                   chm_calculate_dbh, chm_calculate_h, params, output_folder):
     # Create necessary directories if they don't exist
     if not os.path.isdir('./Transformations'):
         os.mkdir('./Transformations')
-    if not os.path.isdir('./Trees'):
-        os.mkdir('./Trees')
+    # Ensure the output folder exists for tree files
+    if not os.path.isdir(output_folder):
+        os.makedirs(output_folder, exist_ok=True)
 
     # Pass the mapping and separator to the Stand initializer.
     MyData = Stand(ID=id, file_path=file_path, mapping=file_column_mapping, sep=file_sep)
@@ -85,12 +86,9 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
     root.withdraw() # Hide the startup menu.
     # Create your App instance using the new window.
     from app import App
-    app = App(main_window, MyData, MyCHM, MyPlotCenters, startup_root=root)
+
+    app = App(main_window, MyData, MyCHM, MyPlotCenters, startup_root=root, output_folder=output_folder)
     # Pass the output folder to the App so it writes Trees there.
-    app.output_folder = output_folder
-    
-
-
 
 def toggle_file_impute_dbh():
     if file_dbh_calc_var.get():

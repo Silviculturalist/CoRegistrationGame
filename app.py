@@ -58,6 +58,7 @@ class App:
         self.root = root
         self.window_active = True  # assume active initially
         self.startup_root = startup_root #To restore reference to startup menu.
+        self.output_folder = output_folder
         # Bind both tkinter focus events (in case the overall app loses focus)
         self.root.bind("<FocusIn>", self.on_focus_in)
         self.root.bind("<FocusOut>", self.on_focus_out)
@@ -620,16 +621,12 @@ class App:
             index=False,
         )
 
-        if isinstance(self.plot_stand, SavedStand):
-            self.plot_stand.write_out().to_csv(f'{self.plot_stand.fp}', index=False)
-        else:
-            # Use selected output folder if provided by Startup Menu, else default.
-            tree_dir = getattr(self, "output_folder", "./Trees")
-            if not os.path.isdir(tree_dir):
-                os.mkdir(tree_dir)
-            self.plot_stand.write_out().to_csv(
-                f'{tree_dir}/Stand_{self.plot_stand.standid}_trees.csv', index=False
-            )
+
+        # Save tree data to the specified output folder
+        if not os.path.isdir(self.output_folder):
+            os.makedirs(self.output_folder, exist_ok=True)
+        tree_path = os.path.join(self.output_folder, f'Stand_{self.plot_stand.standid}_trees.csv')
+        self.plot_stand.write_out().to_csv(tree_path, index=False)
 
     def show_success_dialog(self):
         """Show a dialog after a successful save with options to show files, continue, or exit."""
@@ -646,7 +643,7 @@ class App:
         def do_show_files():
             """Opens the output folders without closing the dialog."""
             logging.info("Show Files button clicked.")
-            output_folder_trees = os.path.abspath('./Trees')
+            output_folder_trees = os.path.abspath(self.output_folder)
             output_folder_trans = os.path.abspath('./Transformations')
             logging.info(f"Opening folders: {output_folder_trees}, {output_folder_trans}")
             try:
