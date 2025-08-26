@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.spatial.distance import cdist
-from scipy.optimize import minimize_scalar
 
 class FractionalICP:
     def __init__(self, source, target, lambda_val=3.0, threshold=1e-6, max_iterations=1000):
