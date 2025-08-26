@@ -96,7 +96,7 @@ class Plot:
         self.current_center = self.center
         self.operations = []
         self.current_action = None
-        self.current_translation = [0, 0]
+        self.current_translation = (0.0, 0.0)
         self.current_rotation = 0
         self.flipped = False
 
@@ -174,7 +174,7 @@ class Plot:
             tree.currenty = tree.y
         self.current_center = self.center
         self.flipped = False
-        self.current_translation = [0, 0]
+        self.current_translation = (0.0, 0.0)
         self.current_rotation = 0
 
     def get_tree_source_array(self):
