@@ -805,31 +805,43 @@ class App:
     def store_transformations(self, plot, fail=False):
         """Store per-plot transformation details for later CSV export."""
         if not plot.trees:
-            # If the plot is empty, store NA values.
+            # If the plot is empty, store NA values for all primitives.
             self.plot_transformations[plot.plotid] = {
-                "original_center": plot.center,
+                "original_center": tuple(map(float, plot.center)),
                 "final_center": pd.NA,
-                "translation": pd.NA,
+                "tx": pd.NA,
+                "ty": pd.NA,
+                "r00": pd.NA,
+                "r01": pd.NA,
+                "r10": pd.NA,
+                "r11": pd.NA,
                 "flip": pd.NA,
-                "rotation": pd.NA
             }
             return
         R, t, flip = plot.get_transform()
         if not fail:
             self.plot_transformations[plot.plotid] = {
-                "original_center": plot.center,
-                "final_center": plot.current_center,
-                "translation": t,
-                "flip": flip,
-                "rotation": R
+                "original_center": tuple(map(float, plot.center)),
+                "final_center": tuple(map(float, plot.current_center)),
+                "tx": float(t[0]),
+                "ty": float(t[1]),
+                "r00": float(R[0, 0]),
+                "r01": float(R[0, 1]),
+                "r10": float(R[1, 0]),
+                "r11": float(R[1, 1]),
+                "flip": bool(flip),
             }
         else:
             self.plot_transformations[plot.plotid] = {
-                "original_center": plot.center,
+                "original_center": tuple(map(float, plot.center)),
                 "final_center": pd.NA,
-                "translation": pd.NA,
+                "tx": pd.NA,
+                "ty": pd.NA,
+                "r00": pd.NA,
+                "r01": pd.NA,
+                "r10": pd.NA,
+                "r11": pd.NA,
                 "flip": pd.NA,
-                "rotation": pd.NA
             }
 
 
