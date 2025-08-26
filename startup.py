@@ -133,8 +133,11 @@ def on_start():
         return  # Stop further execution
     
     if not os.path.exists(output_folder_val):
-        messagebox.showerror("Folder Not Found", f"Output folder path not found:\n{output_folder_val}")
-        return  # Stop further execution
+        try:
+            os.makedirs(output_folder_val, exist_ok=True)
+        except Exception as e:
+            messagebox.showerror("Folder Error", f"Could not create output folder:\n{e}")
+            return  # Stop further execution
 
 
 
