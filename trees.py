@@ -6,6 +6,9 @@ from typing import Optional, Tuple, Dict
 
 
 class Tree:
+    # Default Näslund params (a, b, c) – match UI defaults
+    NASLUND_DEFAULT = (1.74105089, 0.35979281, 3.56879791)
+
     def __init__(
         self,
         tree_id,
@@ -55,12 +58,12 @@ class Tree:
 
     def get_height(self, diameter: float) -> float:
         """Height (m) from diameter (m) via Näslund (1936)."""
-        params = self.naslund_params or (0.01850804, 0.12908718, 1.86770878)
+        params = self.naslund_params or self.NASLUND_DEFAULT
         return self.naslund_1936(diameter, *params)
 
     def get_diameter(self, height: float) -> float:
         """Diameter (m) from height (m) by inverting Näslund via 1D minimize."""
-        params = self.naslund_params or (0.01850804, 0.12908718, 1.86770878)
+        params = self.naslund_params or self.NASLUND_DEFAULT
 
         def find_diameter(height: float, *params: float) -> float:
             def objective(x):
