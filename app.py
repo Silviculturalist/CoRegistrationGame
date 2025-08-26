@@ -334,7 +334,9 @@ class App:
                     self.on_closing()
                 elif event.type == pygame.VIDEORESIZE:
                     self.screen_size = event.size
-                    self.screen = pygame.display.set_mode(self.screen_size, pygame.RESIZABLE)
+                    self.screen = pygame.display.set_mode(
+                        self.screen_size, pygame.SCALED | pygame.RESIZABLE
+                    )
                     self.scale_factor = get_viewport_scale(self.plot_stand, self.screen_size)
                 # Prefer modern Pygame 2 window focus events when available
                 elif hasattr(pygame, "WINDOWEVENT") and event.type == pygame.WINDOWEVENT:
