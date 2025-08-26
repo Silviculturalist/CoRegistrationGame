@@ -39,15 +39,9 @@ class Tree:
         self.original_plot = original_plot
         self.species = species
         self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
-        if stemdiam_cm is not None and height_dm is not None:
-            self.stemdiam = stemdiam_cm / 100
-            self.height = height_dm / 10
-        elif stemdiam_cm is None and height_dm is not None:
-            self.stemdiam = self.get_diameter(height_dm / 10)
-            self.height = height_dm / 10
-        elif stemdiam_cm is not None and height_dm is None:
-            self.stemdiam = stemdiam_cm / 100
-            self.height = self.get_height(stemdiam_cm / 100)
+        self.stemdiam = stemdiam_cm / 100 if stemdiam_cm is not None else None
+        self.height = height_dm / 10 if height_dm is not None else None
+        # Do not auto-impute here. Imputation is done explicitly by loaders.
 
     @staticmethod
     def naslund_1936(diameter: float, *params: float) -> float:
@@ -356,6 +350,10 @@ class Stand:
                 height_dm=height_dm,
                 naslund_params=naslund_params,
             )
+            if impute_h and tree.height is None and tree.stemdiam is not None:
+                tree.height = tree.get_height(tree.stemdiam)
+            if impute_dbh and tree.stemdiam is None and tree.height is not None:
+                tree.stemdiam = tree.get_diameter(tree.height)
             # Check if the plot already exists; if not, create it.
             plot = next((p for p in self.plots if p.plotid == plot_id), None)
             if not plot:

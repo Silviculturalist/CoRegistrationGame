@@ -147,7 +147,7 @@ class CHMPlot(Plot):
                     stemdiam_value = float(row[dbh_col]) if (dbh_col in row and row[dbh_col] not in [None, ""]) else None
                 except Exception as e:
                     stemdiam_value = None
-                height = None  # Let the Tree class impute height.
+                height = None  # Height will be imputed later if requested.
 
             # Optionally skip trees with unrealistic heights.
             if height is not None and height > 450:
@@ -167,6 +167,10 @@ class CHMPlot(Plot):
                 height_dm=height,
                 naslund_params=self.naslund_params,
             )
+            if self.impute_h and tree.height is None and tree.stemdiam is not None:
+                tree.height = tree.get_height(tree.stemdiam)
+            if self.impute_dbh and tree.stemdiam is None and tree.height is not None:
+                tree.stemdiam = tree.get_diameter(tree.height)
             self.append_tree(tree)
 
         pts = np.array([[tree.x, tree.y] for tree in self.trees])
