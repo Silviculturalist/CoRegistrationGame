@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.spatial import cKDTree
 
 class FractionalICP:
     def __init__(self, source, target, lambda_val=3.0, threshold=1e-6, max_iterations=1000):
@@ -39,11 +40,16 @@ class FractionalICP:
 
     def find_correspondences(self, source, target):
         """
-        Find closest correspondence for each source point.
+        Find the closest target for each source point (Euclidean).
+        Uses a KD-tree for speed on larger inputs.
+        Returns:
+            (targets[np.ndarray], dists[np.ndarray])
         """
-        distances = cdist(source, target, metric='euclidean')
-        indices = np.argmin(distances, axis=1)
-        return target[indices], distances.min(axis=1)
+        if len(target) == 0 or len(source) == 0:
+            return np.empty_like(source), np.array([])
+        tree = cKDTree(target)
+        dists, idx = tree.query(source, k=1)
+        return target[idx], dists
 
     def find_optimal_fraction(self, corresponding_targets, distances):
         """
@@ -80,7 +86,7 @@ class FractionalICP:
         U, _, Vt = np.linalg.svd(H)
         R = np.dot(Vt.T, U.T)
         if np.linalg.det(R) < 0:
-            Vt[1, :] *= -1
+            Vt[-1, :] *= -1
             R = np.dot(Vt.T, U.T)
         # Build a 4x4 transformation matrix (2D transform embedded in 3D homogeneous coordinates)
         R_3D = np.eye(4)
@@ -105,7 +111,13 @@ class FractionalICP:
         """
         corresponding_targets, distances = self.find_correspondences(self.source, self.target)
         optimal_fraction, optimal_num_elements = self.find_optimal_fraction(corresponding_targets, distances)
-        current_frmsd = self.frmsd(optimal_fraction, optimal_num_elements, self.source, corresponding_targets)
+        selected_indices = self.get_n_first_elements(optimal_num_elements, distances)
+        current_frmsd = self.frmsd(
+            optimal_fraction,
+            optimal_num_elements,
+            self.source[selected_indices],
+            corresponding_targets[selected_indices],
+        )
         improvement = float('inf')
         iteration = 0
         while improvement > self.threshold and iteration < self.max_iterations:
@@ -116,7 +128,13 @@ class FractionalICP:
             self.source = self.apply_transform(self.source, R_3D)
             corresponding_targets, distances = self.find_correspondences(self.source, self.target)
             optimal_fraction, optimal_num_elements = self.find_optimal_fraction(corresponding_targets, distances)
-            new_frmsd = self.frmsd(optimal_fraction, optimal_num_elements, self.source, corresponding_targets)
+            selected_indices = self.get_n_first_elements(optimal_num_elements, distances)
+            new_frmsd = self.frmsd(
+                optimal_fraction,
+                optimal_num_elements,
+                self.source[selected_indices],
+                corresponding_targets[selected_indices],
+            )
             improvement = current_frmsd - new_frmsd
             current_frmsd = new_frmsd
             iteration += 1
