@@ -86,6 +86,7 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
     root.withdraw() # Hide the startup menu.
     # Create your App instance using the new window.
     from app import App
+
     app = App(main_window, MyData, MyCHM, MyPlotCenters, startup_root=root, output_folder=output_folder)
     # Pass the output folder to the App so it writes Trees there.
 
