@@ -1,5 +1,6 @@
 import numpy as np
 import pygame
+import math
 from scipy.spatial.distance import cdist
 from typing import Tuple
 
@@ -43,12 +44,28 @@ class PlotCenters:
             self.draw_single_center(screen, center, color, alpha, stand_center, scale_factor, screen_size)
 
 
+def _safe_numeric(val, default=0.0):
+    try:
+        if val is None:
+            return default
+        v = float(val)
+        if np.isnan(v):
+            return default
+        return v
+    except Exception:
+        return default
+
+
 def draw_tree(screen, tree, tree_scale, color, alpha, stand_center, scale_factor, screen_size, tree_component=False):
     pos = to_screen_coordinates((tree.currentx, tree.currenty), stand_center, scale_factor, screen_size)
-    if tree_component:
-        radius = max(int(tree.stemdiam * 10 * scale_factor / 2), 1) * tree_scale
-    else:
-        radius = max(int(tree.height / 10 * scale_factor / 2), 1) * tree_scale
+    if tree_component:  # draw proportional to DBH (m) -> cm
+        dbh_m = _safe_numeric(tree.stemdiam, 0.0)
+        raw_radius = (dbh_m * 10.0 * scale_factor / 2.0)
+    else:               # draw proportional to Height (m) -> “/10” scale as before
+        h_m = _safe_numeric(tree.height, 0.0)
+        raw_radius = (h_m / 10.0 * scale_factor / 2.0)
+    radius = max(int(round(raw_radius * tree_scale)), 1)
+
     alpha_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
     alpha_surface.fill((0, 0, 0, 0))
     pygame.draw.circle(alpha_surface, color + (int(255 * alpha),), (radius, radius), radius)
