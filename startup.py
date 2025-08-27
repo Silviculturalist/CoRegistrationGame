@@ -298,7 +298,8 @@ file_sep_combobox.bind('<<ComboboxSelected>>', on_file_sep_change)
 file_mapping_vars = {label: tk.StringVar() for label in ['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
 file_comboboxes = {}
 for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
-    ttk.Label(file_path_frame, text=label).grid(column=0, row=i+2, padx=5, pady=2)
+    display = {'DBH': 'DBH (cm)', 'H': 'H (m)'} .get(label, label)
+    ttk.Label(file_path_frame, text=display).grid(column=0, row=i+2, padx=5, pady=2)
     file_comboboxes[label] = ttk.Combobox(file_path_frame, textvariable=file_mapping_vars[label], state="readonly")
     file_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
     if label == 'DBH':
@@ -310,6 +311,10 @@ for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
         ttk.Checkbutton(file_path_frame, text="Impute Height", variable=file_h_calc_var,
                         command=toggle_file_impute_h).grid(column=2, row=i+2, padx=5, pady=2)
 
+# Unit hint in the Tree Data panel
+ttk.Label(file_path_frame, text="Assumed units: DBH = centimeters, Height = meters").grid(
+    column=0, row=8, columnspan=3, padx=5, pady=(6, 2), sticky="w"
+)
 
 # CHM Path Frame
 chm_path_frame = ttk.LabelFrame(root, text="CHM Data File Path")
@@ -331,7 +336,8 @@ chm_sep_combobox.bind('<<ComboboxSelected>>', on_chm_sep_change)
 chm_mapping_vars = {label: tk.StringVar() for label in ['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
 chm_comboboxes = {}
 for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
-    ttk.Label(chm_path_frame, text=label).grid(column=0, row=i+2, padx=5, pady=2)
+    display = {'DBH': 'DBH (cm)', 'H': 'H (m)'} .get(label, label)
+    ttk.Label(chm_path_frame, text=display).grid(column=0, row=i+2, padx=5, pady=2)
     chm_comboboxes[label] = ttk.Combobox(chm_path_frame, textvariable=chm_mapping_vars[label], state="readonly")
     chm_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
     if label == 'DBH':
@@ -343,6 +349,10 @@ for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
         ttk.Checkbutton(chm_path_frame, text="Impute Height", variable=chm_h_calc_var,
                         command=toggle_chm_impute_h).grid(column=2, row=i+2, padx=5, pady=2)
 
+# Unit hint in the CHM Data panel
+ttk.Label(chm_path_frame, text="Assumed units: DBH = centimeters, Height = meters").grid(
+    column=0, row=8, columnspan=3, padx=5, pady=(6, 2), sticky="w"
+)
 
 # Output Folder Frame
 output_folder_frame = ttk.LabelFrame(root, text="Output Folder")
@@ -353,7 +363,8 @@ output_folder_entry.grid(column=1, row=0, padx=10, pady=5)
 ttk.Button(output_folder_frame, text="Browse", command=select_output_folder).grid(column=2, row=0, padx=10, pady=5)
 
 # Näslund Parameters Section (shown if any calculate checkbox is enabled)
-params_frame = ttk.LabelFrame(root, text="Näslund Parameters")
+# Make the unit convention explicit.
+params_frame = ttk.LabelFrame(root, text="Näslund Parameters (DBH in cm → Height in m)")
 params_frame.grid(column=0, row=4, columnspan=2, pady=10)
 params_frame.grid_remove()
 
@@ -374,6 +385,11 @@ param_entry_3 = ttk.Entry(params_frame)
 param_entry_3.grid(column=1, row=2, padx=5, pady=2)
 param_entry_3.insert(0, "3.56879791")
 param_entry_3.bind("<KeyRelease>", plot_params_graph)
+
+# Small unit reminder under the parameter inputs
+ttk.Label(params_frame, text="Units: supply DBH in centimeters; model returns height in meters.").grid(
+    column=0, row=3, columnspan=2, padx=5, pady=(6, 2), sticky="w"
+)
 
 # Graph Frame to display the Näslund height curve
 graph_frame = ttk.Frame(root)
