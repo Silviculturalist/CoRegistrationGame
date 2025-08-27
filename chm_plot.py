@@ -6,9 +6,16 @@ from trees import Tree, Plot
 import matplotlib.pyplot as plt
 import logging 
 
-def Naslund1936kwargs(diameter, *params):
-    """Calculate tree height based on the Näslund 1936 model."""
-    return 1.3 + (diameter / (params[0] + params[1] * diameter)) ** params[2]
+def Naslund1936kwargs(diameter_cm, *params):
+    """
+    Näslund (1936) height model using centimeter-based parameters.
+    Parameters (a, b, c) are calibrated for DBH in centimeters.
+    Args
+        diameter_cm (float): Diameter at breast height in centimeters.
+    Returns
+        float: Height in meters.
+    """
+    return 1.3 + (diameter_cm / (params[0] + params[1] * diameter_cm)) ** params[2]
 
 def plot_height_curve(params):
     """
@@ -20,10 +27,10 @@ def plot_height_curve(params):
     Returns:
         fig (matplotlib.figure.Figure): The generated figure.
     """
-    # Create a range of diameters in centimeters and convert to meters
-    diameters_cm = [i * 0.1 for i in range(1, 601)]  # 0.1 cm to 60 cm
-    diameters_m = [d / 100.0 for d in diameters_cm]
-    heights = [Naslund1936kwargs(d, *params) for d in diameters_m]
+    # Create a range of diameters in centimeters (0.1–60 cm),
+    # and call the Näslund curve with centimeters directly.
+    diameters_cm = [i * 0.1 for i in range(1, 601)]
+    heights = [Naslund1936kwargs(d, *params) for d in diameters_cm]
 
     fig, ax = plt.subplots()
     ax.plot(diameters_cm, heights, label="Height Curve")
