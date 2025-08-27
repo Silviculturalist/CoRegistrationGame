@@ -49,16 +49,28 @@ class Tree:
         self.height = height_dm / 10 if height_dm is not None else None
 
     @staticmethod
-    def naslund_1936(diameter: float, *params: float) -> float:
-        return 1.3 + (diameter / (params[0] + params[1] * diameter)) ** params[2]
+    def naslund_1936(diameter_m: float, *params: float) -> float:
+        """
+        Näslund (1936) height model.
+
+        Inputs:
+            diameter_m (float): Diameter at breast height in meters.
+            params (a, b, c): Parameters calibrated for DBH in centimeters.
+
+        Returns:
+            float: Height in meters.
+        """
+        d_cm = diameter_m * 100.0
+        a, b, c = params
+        return 1.3 + (d_cm / (a + b * d_cm)) ** c
 
     def get_height(self, diameter: float) -> float:
-        """Height (m) from diameter (m) via Näslund (1936)."""
+        """Height (m) from diameter (m) via Näslund (1936) [params in cm]."""
         params = self.naslund_params or self.NASLUND_DEFAULT
         return self.naslund_1936(diameter, *params)
 
     def get_diameter(self, height: float) -> float:
-        """Diameter (m) from height (m) by inverting Näslund via 1D minimize."""
+        """Diameter (m) from height (m) by inverting Näslund (params in cm) via 1D minimize."""
         params = self.naslund_params or self.NASLUND_DEFAULT
 
 
