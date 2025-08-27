@@ -49,18 +49,16 @@ class Tree:
         self.height = height_dm / 10 if height_dm is not None else None
 
     @staticmethod
-    def naslund_1936(diameter_m: float, *params: float) -> float:
+    def naslund_1936(diameter: float, *params: float) -> float:
         """
         Näslund (1936) height model.
-
         Inputs:
-            diameter_m (float): Diameter at breast height in meters.
-            params (a, b, c): Parameters calibrated for DBH in centimeters.
-
+            diameter (m): DBH in meters (as stored internally).
+            params: (a, b, c) calibrated for DBH in centimeters.
         Returns:
-            float: Height in meters.
+            Height in meters.
         """
-        d_cm = diameter_m * 100.0
+        d_cm = diameter * 100.0
         a, b, c = params
         return 1.3 + (d_cm / (a + b * d_cm)) ** c
 
