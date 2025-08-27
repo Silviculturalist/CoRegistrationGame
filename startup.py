@@ -298,7 +298,7 @@ file_sep_combobox.bind('<<ComboboxSelected>>', on_file_sep_change)
 file_mapping_vars = {label: tk.StringVar() for label in ['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
 file_comboboxes = {}
 for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
-    display = {'DBH': 'DBH (cm)', 'H': 'H (m)'} .get(label, label)
+    display = {'DBH': 'DBH (cm)', 'H': 'H (m)'}.get(label, label)
     ttk.Label(file_path_frame, text=display).grid(column=0, row=i+2, padx=5, pady=2)
     file_comboboxes[label] = ttk.Combobox(file_path_frame, textvariable=file_mapping_vars[label], state="readonly")
     file_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
@@ -336,7 +336,7 @@ chm_sep_combobox.bind('<<ComboboxSelected>>', on_chm_sep_change)
 chm_mapping_vars = {label: tk.StringVar() for label in ['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']}
 chm_comboboxes = {}
 for i, label in enumerate(['PlotID', 'TreeID', 'X', 'Y', 'DBH', 'H']):
-    display = {'DBH': 'DBH (cm)', 'H': 'H (m)'} .get(label, label)
+    display = {'DBH': 'DBH (cm)', 'H': 'H (m)'}.get(label, label)
     ttk.Label(chm_path_frame, text=display).grid(column=0, row=i+2, padx=5, pady=2)
     chm_comboboxes[label] = ttk.Combobox(chm_path_frame, textvariable=chm_mapping_vars[label], state="readonly")
     chm_comboboxes[label].grid(column=1, row=i+2, padx=5, pady=2)
@@ -363,8 +363,8 @@ output_folder_entry.grid(column=1, row=0, padx=10, pady=5)
 ttk.Button(output_folder_frame, text="Browse", command=select_output_folder).grid(column=2, row=0, padx=10, pady=5)
 
 # Näslund Parameters Section (shown if any calculate checkbox is enabled)
-# Make the unit convention explicit.
-params_frame = ttk.LabelFrame(root, text="Näslund Parameters (DBH in cm → Height in m)")
+# Explicit unit convention for users
+params_frame = ttk.LabelFrame(root, text="Näslund Parameters (DBH in cm -> Height in m)")
 params_frame.grid(column=0, row=4, columnspan=2, pady=10)
 params_frame.grid_remove()
 
