@@ -9,13 +9,16 @@ import logging
 def Naslund1936kwargs(diameter_cm, *params):
     """
     Näslund (1936) height model using centimeter-based parameters.
-    Parameters (a, b, c) are calibrated for DBH in centimeters.
-    Args
+
+    Args:
         diameter_cm (float): Diameter at breast height in centimeters.
-    Returns
+        params (tuple): ``(a, b, c)`` calibrated for DBH in centimeters.
+
+    Returns:
         float: Height in meters.
     """
-    return 1.3 + (diameter_cm / (params[0] + params[1] * diameter_cm)) ** params[2]
+    a, b, c = params
+    return 1.3 + (diameter_cm / (a + b * diameter_cm)) ** c
 
 def plot_height_curve(params):
     """
@@ -27,8 +30,7 @@ def plot_height_curve(params):
     Returns:
         fig (matplotlib.figure.Figure): The generated figure.
     """
-    # Create a range of diameters in centimeters (0.1–60 cm),
-    # and call the Näslund curve with centimeters directly.
+    # Create a range of diameters in centimeters (0.1–60 cm) and plot directly in cm
     diameters_cm = [i * 0.1 for i in range(1, 601)]
     heights = [Naslund1936kwargs(d, *params) for d in diameters_cm]
 
