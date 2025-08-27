@@ -650,8 +650,19 @@ class App:
         else:
             # If no plots remain, save results and exit workflow.
             self.save_files()
-            self.show_success_dialog()
-        self.update_listboxes()
+            action = self.show_success_dialog()
+            if action == "continue":
+                self.on_closing()
+                return
+            elif action == "exit":
+                self.on_closing()
+                try:
+                    if self.startup_root and self.startup_root.winfo_exists():
+                        self.startup_root.destroy()
+                finally:
+                    sys.exit()
+        if self.root and self.root.winfo_exists():
+            self.update_listboxes()
 
     def remove_plot(self):
         if self.current_plot in self.new_plots:
@@ -695,7 +706,19 @@ class App:
                     self.completed_plot_ids.append(self.remaining_plot_ids.pop(idx_in_queue))
                 self.chm_stand.remove_matches(self.current_plot, min_dist_percent=15)
                 self.save_files()
-                self.show_success_dialog()
+                action = self.show_success_dialog()
+                if action == "continue":
+                    # Return to startup menu and stop touching destroyed widgets.
+                    self.on_closing()
+                    return
+                elif action == "exit":
+                    # Full teardown: close App and the startup menu, then exit process.
+                    self.on_closing()
+                    try:
+                        if self.startup_root and self.startup_root.winfo_exists():
+                            self.startup_root.destroy()
+                    finally:
+                        sys.exit()
         else:
             self.store_transformations(self.current_plot)
             if self.current_plot.plotid in self.remaining_plot_ids:
@@ -709,7 +732,9 @@ class App:
                 if plot is not None:
                     self.current_plot_index = idx
                     self.current_plot = plot
-        self.update_listboxes()
+        # Only update listboxes if our UI still exists.
+        if self.root and self.root.winfo_exists():
+            self.update_listboxes()
 
     def save_files(self):
         """Save trees and transformation files."""
@@ -742,6 +767,9 @@ class App:
         dialog.grab_set()
         dialog.transient(self.root)
 
+        # Record which action the user chose
+        result = {"action": None}
+
         # --- Define Button Actions ---
 
         def do_show_files():
@@ -763,67 +791,19 @@ class App:
             to return to the startup menu."""
             logging.info("Continue button clicked.")
             try:
-                dialog.destroy() # Close this dialog first
+                result["action"] = "continue"
+                dialog.destroy()  # Close this dialog first
             except tk.TclError as e:
                 logging.warning(f"Error destroying success dialog (Continue): {e}")
-            # This should trigger cleanup and show startup menu
-            self.on_closing()
 
         def do_exit():
-            """Closes this dialog, cleans up, and terminates the entire application gracefully."""
-            logging.info("Exit button clicked. Terminating application.")
+            """Close this dialog and signal a full application exit."""
+            logging.info("Exit button clicked.")
+            result["action"] = "exit"
             try:
-                # Ensure the dialog variable exists and the window exists before destroying
-                if 'dialog' in locals() and isinstance(dialog, tk.Toplevel) and dialog.winfo_exists():
-                    dialog.destroy()
+                dialog.destroy()
             except tk.TclError as e:
                 logging.warning(f"Error destroying success dialog (Exit): {e}")
-
-            # Cancel the pending process_queue call
-            if self.after_id:
-                try:
-                    # Check if the Toplevel window (self.root) still exists before cancelling
-                    if self.root and self.root.winfo_exists():
-                        self.root.after_cancel(self.after_id)
-                        logging.info("Pending 'after' call cancelled (Exit).")
-                    else:
-                        logging.info("App Toplevel window already gone, cannot cancel 'after' (Exit).")
-                except tk.TclError as e:
-                    logging.warning(f"Error cancelling 'after' during exit: {e}")
-                self.after_id = None
-
-            self.running = False # Stop pygame loop variable if checked elsewhere
-
-            # Attempt to quit Pygame
-            try:
-                pygame.quit()
-                logging.info("Pygame quit successfully (Exit).")
-            except pygame.error as e:
-                logging.warning(f"Pygame quit error during exit: {e}")
-
-            # Attempt to destroy the main app window (Toplevel)
-            try:
-                if self.root and self.root.winfo_exists():
-                    self.root.destroy()
-                    logging.info("App Toplevel window destroyed (Exit).")
-            except tk.TclError as e:
-                logging.warning(f"Error destroying App Toplevel window during exit: {e}")
-
-            # --- Start Change ---
-            # Attempt to gracefully QUIT the main Tkinter loop via the startup_root.
-            # DO NOT destroy startup_root here - let the mainloop handle it upon exit.
-            try:
-                if self.startup_root and self.startup_root.winfo_exists():
-                    logging.info("Quitting Tkinter main loop via startup_root...")
-                    self.startup_root.quit() # Signal mainloop in startup.py to exit cleanly
-                else:
-                    # If startup_root is already gone for some reason, we must force exit
-                    logging.warning("Startup root invalid or destroyed before quit signal. Forcing exit.")
-                    sys.exit()
-            except tk.TclError as e:
-                 # Catch error if quit fails unexpectedly
-                 logging.warning(f"Error quitting main loop via startup_root: {e}. Forcing exit.")
-                 sys.exit()
 
         # --- Configure Dialog Close Button ---
         # Make the 'X' button behave like the Exit button
@@ -854,8 +834,8 @@ class App:
         dialog.geometry(f"+{x}+{y}")
 
         dialog.wait_window()
-        # This point might not be reached if Exit is clicked, as sys.exit() is called.
-        logging.info("Success dialog finished (likely via Continue).")
+        logging.info(f"Success dialog finished (action={result['action']}).")
+        return result["action"]
 
 
     def store_transformations(self, plot, fail=False):
@@ -1032,8 +1012,14 @@ class App:
         if self.startup_root and self.startup_root.winfo_exists():
             try:
                 self.startup_root.deiconify() # Show the startup menu again
-                # Optional: Bring the startup window to the front
-                # bring_window_to_front(self.startup_root)
+                # Bring the startup window to the front and give it focus
+                try:
+                    self.startup_root.lift()
+                    self.startup_root.focus_force()
+                    self.startup_root.attributes("-topmost", True)
+                    self.startup_root.after(500, lambda: self.startup_root.attributes("-topmost", False))
+                except Exception as e:
+                    logging.error(f"Error bringing startup window to front: {e}")
                 logging.info("Startup root deiconified and brought to front.")
             except tk.TclError as e:
                 logging.error(f"Error deiconifying startup root (might be destroyed): {e}")
