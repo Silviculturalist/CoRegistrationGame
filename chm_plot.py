@@ -145,6 +145,8 @@ class CHMPlot(Plot):
                         height = row[height_col]
                     elif height_unit == 'cm':
                         height = row[height_col] / 10
+                    else:
+                        raise ValueError(f"Unsupported height_unit '{height_unit}'. Use 'm', 'dm', or 'cm'.")
                 except Exception as e:
                     logging.error(f"Error processing height for row: {row} - {e}")
                     continue

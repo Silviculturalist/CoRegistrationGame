@@ -214,7 +214,7 @@ class Plot:
     def get_tree_current_array(self):
         """Return an array of [tree_id, currentx, currenty, height] for trees."""
         if not self.trees:
-           return np.empty((0, 4))
+            return np.empty((0, 4))
         return np.array([[tree.tree_id, tree.currentx, tree.currenty, tree.height] for tree in self.trees])
 
 

@@ -181,16 +181,17 @@ class App:
         # Check if the root window (Toplevel) associated with this App instance still exists.
         # If not, don't process the queue and don't reschedule.
         if not self.root or not self.root.winfo_exists():
-             logging.debug("process_queue: Root window destroyed, stopping queue processing.")
-             self.after_id = None # Ensure it's cleared
-             return # Stop processing
+            logging.debug("process_queue: Root window destroyed, stopping queue processing.")
+            self.after_id = None  # Ensure it's cleared
+            return  # Stop processing
         # --- End Change ---
 
         try:
             while True:
                 event_type, key = self.event_queue.get_nowait()
                 # Check window existence again before handling, just in case.
-                if not self.root or not self.root.winfo_exists(): break
+                if not self.root or not self.root.winfo_exists():
+                    break
 
                 if event_type == 'press':
                     self.handle_keydown(key)
@@ -199,18 +200,20 @@ class App:
         except queue.Empty:
             pass
         except tk.TclError as e:
-             # Catch potential errors during key handling if window is destroyed mid-process
-             logging.warning(f"process_queue: TclError during event handling (window likely destroyed): {e}")
-             self.after_id = None
-             return # Stop processing
+            # Catch potential errors during key handling if window is destroyed mid-process
+            logging.warning(
+                f"process_queue: TclError during event handling (window likely destroyed): {e}"
+            )
+            self.after_id = None
+            return  # Stop processing
 
         # --- Start Change ---
         # Only reschedule if the window still exists
         if self.root and self.root.winfo_exists():
             self.after_id = self.root.after(10, self.process_queue)
         else:
-             logging.debug("process_queue: Root window destroyed, not rescheduling.")
-             self.after_id = None
+            logging.debug("process_queue: Root window destroyed, not rescheduling.")
+            self.after_id = None
         # --- End Change ---
 
     def create_ui(self):
