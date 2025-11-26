@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize_scalar
-from copy import deepcopy
 from typing import Optional, Tuple, Dict
 
 

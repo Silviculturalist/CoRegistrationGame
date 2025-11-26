@@ -156,7 +156,7 @@ class CHMPlot(Plot):
                 # Height column is missing. Try to get DBH for imputation.
                 try:
                     stemdiam_value = float(row[dbh_col]) if (dbh_col in row and row[dbh_col] not in [None, ""]) else None
-                except Exception as e:
+                except Exception:
                     stemdiam_value = None
                 height = None  # Let the Tree class impute height.
 
