@@ -99,3 +99,28 @@ def test_missing_plus_outliers_frmsd():
     assert np.allclose(aligned[:, 2], src[:, 2])
     assert _nn_rmsd(aligned, tgt_noisy) < _nn_rmsd(src, tgt_noisy) * 0.5
     assert _inlier_fraction_xy(aligned, clean, tol=0.12) > 0.90
+
+
+def test_empty_source_returns_empty_alignment():
+    source = np.empty((0, 3))
+    target = _make_cloud(n=5, seed=42)
+
+    ficp = FractionalICP(source.copy(), target)
+    aligned = ficp.run()
+
+    assert aligned.shape == source.shape
+    assert aligned.size == 0
+
+
+def test_empty_target_produces_no_correspondences():
+    source = _make_cloud(n=4, seed=24)
+    target = np.empty((0, 3))
+
+    ficp = FractionalICP(source.copy(), target)
+    correspondences, distances = ficp.find_correspondences(source, target)
+    frac, num = ficp.find_optimal_fraction(correspondences, distances)
+
+    assert correspondences.shape == (0, target.shape[1])
+    assert distances.size == 0
+    assert frac == 0.0
+    assert num == 0
