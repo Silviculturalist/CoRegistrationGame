@@ -14,8 +14,8 @@ mock_pynput.keyboard = mock_keyboard
 sys.modules.setdefault("pynput", mock_pynput)
 sys.modules.setdefault("pynput.keyboard", mock_keyboard)
 
-from trees import Plot, Tree
-from app import App
+from trees import Plot, Tree  # noqa: E402  # deferred import to follow sys.path update
+from app import App  # noqa: E402  # deferred import to follow sys.path update
 
 
 def test_transformation_serialization_primitives(tmp_path):
