@@ -66,22 +66,22 @@ def _auto_map_columns(columns):
     return {field: pick(field) for field in candidates}
 
 def update_column_options(file_path, sep, comboboxes, mapping_vars):
-    if file_path.endswith('.csv'):
-        try:
-            df = pd.read_csv(file_path, sep=sep)
-            # Prepend an empty option to allow clearing the selection.
-            columns = [''] + df.columns.tolist()
-            # Guess sensible defaults for the mapping widgets.
-            guesses = _auto_map_columns(df.columns)
-            # Update each combobox with the file columns plus a blank option.
-            for combobox in comboboxes.values():
-                combobox['values'] = columns
-            for var in mapping_vars:
-                mapping_vars[var].set(guesses.get(var, ''))
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to read columns from file: {e}")
-    else:
-        messagebox.showerror("Invalid File", "Please select a CSV file.")
+    if not file_path or not file_path.endswith('.csv') or not os.path.isfile(file_path):
+        return
+
+    try:
+        df = pd.read_csv(file_path, sep=sep)
+        # Prepend an empty option to allow clearing the selection.
+        columns = [''] + df.columns.tolist()
+        # Guess sensible defaults for the mapping widgets.
+        guesses = _auto_map_columns(df.columns)
+        # Update each combobox with the file columns plus a blank option.
+        for combobox in comboboxes.values():
+            combobox['values'] = columns
+        for var in mapping_vars:
+            mapping_vars[var].set(guesses.get(var, ''))
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to read columns from file: {e}")
 
 def plot_params_graph(*args):
     try:
@@ -177,14 +177,14 @@ def toggle_chm_impute_h():
 
 def on_start():
     id_val = id_entry.get()
-    file_path_val = file_path_entry.get()
-    chm_path_val = chm_path_entry.get()
+    file_path_val = file_path_var.get()
+    chm_path_val = chm_path_var.get()
     output_folder_val = output_folder_entry.get()
     file_sep_val = file_sep_var.get()
     chm_sep_val = chm_sep_var.get()
 
-    file_path_val = file_path_entry.get().strip()
-    chm_path_val = chm_path_entry.get().strip()
+    file_path_val = file_path_var.get().strip()
+    chm_path_val = chm_path_var.get().strip()
     
     # Check if the tree data file exists
     if not os.path.exists(file_path_val):
@@ -286,15 +286,14 @@ def on_start():
 def select_file_path():
     file_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
     if file_path:
-        file_path_entry.delete(0, tk.END)
-        file_path_entry.insert(0, file_path)
+        file_path_var.set(file_path)
         update_column_options(file_path, file_sep_var.get(), file_comboboxes, file_mapping_vars)
+
 
 def select_chm_path():
     chm_path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
     if chm_path:
-        chm_path_entry.delete(0, tk.END)
-        chm_path_entry.insert(0, chm_path)
+        chm_path_var.set(chm_path)
         update_column_options(chm_path, chm_sep_var.get(), chm_comboboxes, chm_mapping_vars)
 
 def select_output_folder():
@@ -304,10 +303,19 @@ def select_output_folder():
         output_folder_entry.insert(0, output_folder)
 
 def on_file_sep_change(*args):
-    update_column_options(file_path_entry.get(), file_sep_var.get(), file_comboboxes, file_mapping_vars)
+    update_column_options(file_path_var.get(), file_sep_var.get(), file_comboboxes, file_mapping_vars)
+
 
 def on_chm_sep_change(*args):
-    update_column_options(chm_path_entry.get(), chm_sep_var.get(), chm_comboboxes, chm_mapping_vars)
+    update_column_options(chm_path_var.get(), chm_sep_var.get(), chm_comboboxes, chm_mapping_vars)
+
+
+def on_file_path_change(*args):
+    update_column_options(file_path_var.get(), file_sep_var.get(), file_comboboxes, file_mapping_vars)
+
+
+def on_chm_path_change(*args):
+    update_column_options(chm_path_var.get(), chm_sep_var.get(), chm_comboboxes, chm_mapping_vars)
 
 def on_closing():
     root.destroy()
@@ -337,9 +345,14 @@ ttk.Checkbutton(overwrite_frame, text="Allow overwriting existing files", variab
 file_path_frame = ttk.LabelFrame(root, text="Tree Data File Path")
 file_path_frame.grid(column=0, row=1, padx=10, pady=10, sticky="nsew")
 
+file_path_var = tk.StringVar()
+file_path_var.trace_add("write", on_file_path_change)
+
 ttk.Label(file_path_frame, text="File Path:").grid(column=0, row=0, padx=10, pady=5)
-file_path_entry = ttk.Entry(file_path_frame)
+file_path_entry = ttk.Entry(file_path_frame, textvariable=file_path_var)
 file_path_entry.grid(column=1, row=0, padx=10, pady=5)
+file_path_entry.bind("<FocusOut>", lambda _event: on_file_path_change())
+file_path_entry.bind("<KeyRelease>", lambda _event: on_file_path_change())
 ttk.Button(file_path_frame, text="Browse", command=select_file_path).grid(column=2, row=0, padx=10, pady=5)
 
 ttk.Label(file_path_frame, text="CSV Separator:").grid(column=0, row=1, padx=10, pady=5)
@@ -375,9 +388,14 @@ ttk.Label(file_path_frame, text="Assumed units: DBH = centimeters, Height = mete
 chm_path_frame = ttk.LabelFrame(root, text="CHM Data File Path")
 chm_path_frame.grid(column=1, row=1, padx=10, pady=10, sticky="nsew")
 
+chm_path_var = tk.StringVar()
+chm_path_var.trace_add("write", on_chm_path_change)
+
 ttk.Label(chm_path_frame, text="CHM Path:").grid(column=0, row=0, padx=10, pady=5)
-chm_path_entry = ttk.Entry(chm_path_frame)
+chm_path_entry = ttk.Entry(chm_path_frame, textvariable=chm_path_var)
 chm_path_entry.grid(column=1, row=0, padx=10, pady=5)
+chm_path_entry.bind("<FocusOut>", lambda _event: on_chm_path_change())
+chm_path_entry.bind("<KeyRelease>", lambda _event: on_chm_path_change())
 ttk.Button(chm_path_frame, text="Browse", command=select_chm_path).grid(column=2, row=0, padx=10, pady=5)
 
 ttk.Label(chm_path_frame, text="CSV Separator:").grid(column=0, row=1, padx=10, pady=5)
