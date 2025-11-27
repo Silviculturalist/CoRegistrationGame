@@ -272,7 +272,7 @@ class Plot:
         H = np.dot(source_centered.T, target_centered)
         U, S, Vt = np.linalg.svd(H)
         R = np.dot(Vt.T, U.T)
-        if np.linalg.det(R) < 0:
+        if np.linalg.det(R) < 0 and not self.flipped:
             Vt[-1, :] *= -1
             R = np.dot(Vt.T, U.T)
         # Correct Procrustes translation: t = mu_t - R.dot(mu_s)

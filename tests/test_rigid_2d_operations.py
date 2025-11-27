@@ -33,6 +33,29 @@ def test_plot_transforms_are_rigid_in_2d():
     )
 
 
+def test_get_transform_retains_flip_reflection():
+    plot = Plot(plotid=2)
+    plot.append_tree(Tree(1, 0.0, 0.0))
+    plot.append_tree(Tree(2, 2.0, 0.5))
+    plot.append_tree(Tree(3, -1.0, 1.5))
+
+    source_xy = plot.get_tree_source_array()[:, 1:3].astype(float)
+
+    plot.translate_plot((1.5, -0.25))
+    plot.rotate_plot(30.0)
+    plot.coordinate_flip()
+
+    current_xy = plot.get_tree_current_array()[:, 1:3].astype(float)
+
+    R, t, flipped = plot.get_transform()
+
+    transformed_xy = (R @ source_xy.T).T + t
+
+    assert flipped is True
+    assert np.linalg.det(R) < 0
+    np.testing.assert_allclose(transformed_xy, current_xy, atol=1e-6)
+
+
 def test_fractional_icp_transform_is_planar_and_preserves_z():
     src = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 2.0], [0.0, 1.0, 3.0]])
     angle = 15.0
