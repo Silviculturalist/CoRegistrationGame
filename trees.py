@@ -4,6 +4,24 @@ from scipy.optimize import minimize_scalar
 from typing import Optional, Tuple, Dict
 
 
+def _resolve_mapping_value(mapping, key, default, *, allow_none: bool = False):
+    """Return a cleaned mapping value, optionally allowing None for blank entries."""
+
+    if not mapping:
+        return default
+
+    value = mapping.get(key, default)
+    if value is None:
+        return None if allow_none else default
+
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None if allow_none else default
+
+    return value
+
+
 class Tree:
     # Default Näslund params (a, b, c) – match UI defaults
     NASLUND_DEFAULT = (1.74105089, 0.35979281, 3.56879791)
@@ -337,16 +355,16 @@ class Stand:
         # Determine the column names using the mapping, if provided.
         # For StandID, if the user did not select a column (empty string), assume all rows belong to the provided stand.
         if mapping:
-            stand_col = mapping.get('StandID', '').strip()  # May be empty.
-            plot_col = mapping.get('PlotID', 'PLOT')
-            tree_col = mapping.get('TreeID', 'TreeID')
-            x_col = mapping.get('X', 'X_GROUND')
-            y_col = mapping.get('Y', 'Y_GROUND')
-            dbh_col = mapping.get('DBH', 'STEMDIAM')
-            h_col   = mapping.get('H', 'H') if mapping.get('H', '') != '' else None
-            species_col = mapping.get('Species', 'Species')
-            xc_col = mapping.get('XC', x_col)
-            yc_col = mapping.get('YC', y_col)
+            stand_col = _resolve_mapping_value(mapping, 'StandID', '', allow_none=True)
+            plot_col = _resolve_mapping_value(mapping, 'PlotID', 'PLOT')
+            tree_col = _resolve_mapping_value(mapping, 'TreeID', 'TreeID')
+            x_col = _resolve_mapping_value(mapping, 'X', 'X_GROUND')
+            y_col = _resolve_mapping_value(mapping, 'Y', 'Y_GROUND')
+            dbh_col = _resolve_mapping_value(mapping, 'DBH', 'STEMDIAM')
+            h_col = _resolve_mapping_value(mapping, 'H', 'H', allow_none=True)
+            species_col = _resolve_mapping_value(mapping, 'Species', 'Species')
+            xc_col = _resolve_mapping_value(mapping, 'XC', x_col)
+            yc_col = _resolve_mapping_value(mapping, 'YC', y_col)
         else:
             # Use default column names.
             stand_col = 'Stand'
