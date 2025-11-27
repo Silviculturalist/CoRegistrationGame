@@ -93,6 +93,8 @@ The startup menu (built with Tkinter) will allow you to:
 - Select the Tree Data File and CHM Data File.
 - Specify CSV separators.
 - Map your CSV column names to the required fields (StandID, PlotID, TreeID, X, Y, DBH, H).
+  The startup menu now auto-selects likely columns based on header names (you can still change
+  any dropdown manually).
 - Choose whether to impute missing values for DBH or Height using the provided Näslund height–diameter relationship (only one imputation option per file is allowed).
 - Set Näslund model parameters (with a real-time preview of the height curve). These parameters are applied to imputation during data loading when one of DBH/Height is missing.
 - Select an output folder for the transformed tree data. Transformation logs are stored in `./Transformations`.
