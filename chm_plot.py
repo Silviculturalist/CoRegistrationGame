@@ -120,7 +120,7 @@ class CHMPlot(Plot):
             The input height is converted to decimeters (height_dm) to match Tree's init.
         Raises:
             FileNotFoundError: If the file cannot be read.
-            KeyError: If required columns are missing after mapping.
+            ValueError: If required columns are missing after mapping.
         """
         self.trees = []
         self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
@@ -136,6 +136,22 @@ class CHMPlot(Plot):
         height_col = _resolve_mapping_value(mapping, 'H', 'H')
         idals_col = _resolve_mapping_value(mapping, 'TreeID', 'IDALS')
         dbh_col = _resolve_mapping_value(mapping, 'DBH', 'DBH')
+
+        resolved_mapping = {
+            'X': x_col,
+            'Y': y_col,
+            'H': height_col,
+            'TreeID': idals_col,
+            'DBH': dbh_col,
+        }
+
+        missing_columns = sorted({col for col in resolved_mapping.values() if col not in df.columns})
+        if missing_columns:
+            raise ValueError(
+                "Missing required columns in CHM data: "
+                f"{missing_columns}. Resolved column mapping: {resolved_mapping}. "
+                f"User-provided mapping: {mapping if mapping is not None else {}}."
+            )
 
         # Check if the height column exists in the data.
         missing_height = height_col not in df.columns
