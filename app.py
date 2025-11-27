@@ -94,6 +94,7 @@ class App:
         self.flash_text = None  # For flashing text messages
         self.flash_end_time = 0
         self.show_help = False
+        self.help_window = None
         self.keymap_down, self.keymap_up = self.build_keymaps()
         self.create_ui()
         self.after_id = None
@@ -245,6 +246,7 @@ class App:
         tk.Button(button_frame, text="Step Back", command=self.step_back).grid(row=0, column=21)
         tk.Button(button_frame, text="New Plot from Polygon", command=self.new_plot_from_polygon).grid(row=0, column=22)
         tk.Button(button_frame, text="Flash Trees", command=self.toggle_flash).grid(row=0, column=23)
+        tk.Button(button_frame, text="Keybinds", command=self.open_keybinds_popup).grid(row=0, column=24, padx=(10, 0))
 
         self.pygame_frame = tk.Frame(self.root, width=800, height=600)
         self.pygame_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -565,6 +567,40 @@ class App:
 
     def toggle_help(self):
         self.show_help = not self.show_help
+
+    def open_keybinds_popup(self):
+        """Open a popup window listing all keyboard shortcuts."""
+        if self.help_window and self._widget_exists(self.help_window):
+            try:
+                self.help_window.lift()
+                self.help_window.focus_force()
+            except Exception:
+                pass
+            return
+
+        self.help_window = tk.Toplevel(self.root)
+        self.help_window.title("Keybinds")
+        self.help_window.protocol("WM_DELETE_WINDOW", self._close_keybinds_popup)
+
+        header = tk.Label(self.help_window, text="Keyboard Shortcuts", font=("TkDefaultFont", 12, "bold"))
+        header.grid(row=0, column=0, columnspan=2, padx=10, pady=(10, 5))
+
+        for idx, (shortcut, description) in enumerate(self.help_entries, start=1):
+            tk.Label(self.help_window, text=shortcut).grid(row=idx, column=0, sticky="w", padx=10, pady=2)
+            tk.Label(self.help_window, text=description).grid(row=idx, column=1, sticky="w", padx=10, pady=2)
+
+        tk.Button(self.help_window, text="Close", command=self._close_keybinds_popup).grid(
+            row=len(self.help_entries) + 1, column=0, columnspan=2, pady=(10, 10)
+        )
+
+    def _close_keybinds_popup(self):
+        if self.help_window and self._widget_exists(self.help_window):
+            try:
+                self.help_window.destroy()
+            except tk.TclError:
+                pass
+        self.help_window = None
+
     def shift_plot(self, direction):
         if direction == 'up':
             if self.current_plot:
@@ -980,7 +1016,10 @@ class App:
     def on_closing(self):
         logging.info("Closing App window...")
         self.running = False  # Stop the pygame loop and background queue processing
-    
+
+        # Close any auxiliary popups we created (like keybinds) before teardown
+        self._close_keybinds_popup()
+
         # Stop keyboard listener cleanly
         if self.listener:
             self.stop_listener()
