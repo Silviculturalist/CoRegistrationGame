@@ -96,6 +96,9 @@ class App:
         self.show_help = False
         self.help_window = None
         self.keymap_down, self.keymap_up = self.build_keymaps()
+        # Keep the listener running for the app lifetime to avoid Windows GIL crashes when
+        # auxiliary Tk popups (e.g., Keybinds) temporarily take focus.
+        self.start_listener()
         self.create_ui()
         self.after_id = None
         self.run_pygame()
@@ -157,18 +160,15 @@ class App:
             idx, _ = self._plot_by_id(self.current_plot.plotid)
             self.current_plot_index = idx if idx is not None else 0
 
-    # These tkinter focus handlers now also control the listener.
     def on_focus_in(self, event):
         self.window_active = True
-        self.start_listener()
         self.flash_message("MOUSEOVER\nFOCUS GAINED")
-        logging.info("Focus gained (tkinter): flashing message and starting listener.")
+        logging.info("Focus gained (tkinter): flashing message and enabling input handling.")
 
     def on_focus_out(self, event):
         self.window_active = False
-        self.stop_listener()
         self.flash_message("MOUSEOVER \nFOCUS LOST")
-        logging.info("Focus lost (tkinter): flashing message and stopping listener.")
+        logging.info("Focus lost (tkinter): flashing message and disabling input handling.")
 
     def on_press(self, key):
         if not self.window_active:
@@ -354,8 +354,6 @@ class App:
         self.root.lower() #Send tk window to back
 
         self.running = True
-        # Start the listener initially.
-        self.start_listener()
         clock = pygame.time.Clock()
         while self.running:
             for event in pygame.event.get():
@@ -371,28 +369,24 @@ class App:
                 elif hasattr(pygame, "WINDOWEVENT") and event.type == pygame.WINDOWEVENT:
                     if event.event == pygame.WINDOWEVENT_FOCUS_LOST and self.window_active:
                         self.window_active = False
-                        self.stop_listener()
                         self.flash_message("MOUSEOVER \nFOCUS LOST")
-                        logging.info("Pygame window focus lost: stopped keyboard listener.")
+                        logging.info("Pygame window focus lost: disabled input handling.")
                     elif event.event == pygame.WINDOWEVENT_FOCUS_GAINED and not self.window_active:
                         self.window_active = True
-                        self.start_listener()
                         self.flash_message("MOUSEOVER\nFOCUS GAINED")
-                        logging.info("Pygame window focus gained: restarted keyboard listener.")
+                        logging.info("Pygame window focus gained: enabled input handling.")
                 # Handle focus events from the pygame window.
                 elif event.type == pygame.ACTIVEEVENT:
                     # Check if the keyboard focus state changed (state 1)
                     if event.state & 1:
                         if event.gain == 0 and self.window_active:
                             self.window_active = False
-                            self.stop_listener()
                             self.flash_message("MOUSEOVER \nFOCUS LOST")
-                            logging.info("Pygame window lost focus: stopped keyboard listener.")
+                            logging.info("Pygame window lost focus: disabled input handling.")
                         elif event.gain == 1 and not self.window_active:
                             self.window_active = True
-                            self.start_listener()
                             self.flash_message("MOUSEOVER\nFOCUS GAINED")
-                            logging.info("Pygame window gained focus: restarted keyboard listener.")
+                            logging.info("Pygame window gained focus: enabled input handling.")
             self.screen.fill((255, 255, 255))
             # Draw CHM and plots based on display_mode.
             if self.chm_stand.trees:
