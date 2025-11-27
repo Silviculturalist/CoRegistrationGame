@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize_scalar
 from typing import Optional, Tuple, Dict
+import warnings
 
 
 def _resolve_mapping_value(mapping, key, default, *, allow_none: bool = False):
@@ -380,7 +381,23 @@ class Stand:
 
         # If a stand column is specified, filter rows; otherwise, assume all rows belong to this stand.
         if stand_col:
-            reader = [row for row in reader if row.get(stand_col) is not None and int(row[stand_col]) == int(ID)]
+            filtered_rows = []
+            invalid_rows = 0
+            for row in reader:
+                raw_stand_id = row.get(stand_col)
+                if raw_stand_id is None:
+                    continue
+                try:
+                    if int(raw_stand_id) == int(ID):
+                        filtered_rows.append(row)
+                except (ValueError, TypeError):
+                    invalid_rows += 1
+            if invalid_rows:
+                warnings.warn(
+                    f"Skipping {invalid_rows} row(s) with non-numeric stand IDs in column '{stand_col}'.",
+                    UserWarning,
+                )
+            reader = filtered_rows
         else:
             # No stand column mapping provided—assume every row belongs to the provided stand.
             for row in reader:
