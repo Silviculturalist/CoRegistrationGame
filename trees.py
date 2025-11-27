@@ -1,8 +1,25 @@
 import pandas as pd
 import numpy as np
 from scipy.optimize import minimize_scalar
-from copy import deepcopy
 from typing import Optional, Tuple, Dict
+
+
+def _resolve_mapping_value(mapping, key, default, *, allow_none: bool = False):
+    """Return a cleaned mapping value, optionally allowing None for blank entries."""
+
+    if not mapping:
+        return default
+
+    value = mapping.get(key, default)
+    if value is None:
+        return None if allow_none else default
+
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None if allow_none else default
+
+    return value
 
 
 class Tree:
@@ -135,31 +152,35 @@ class Plot:
             self.current_center = self.center
 
     def _apply_translation(self, value):
-        self.current_center = (self.current_center[0] + value[0], self.current_center[1] + value[1])
+        """Translate all tree coordinates rigidly in 2D."""
+        self.current_center = (
+            self.current_center[0] + value[0],
+            self.current_center[1] + value[1],
+        )
         for tree in self.trees:
             tree.currentx += value[0]
             tree.currenty += value[1]
 
+    def _apply_matrix_about_center(self, matrix: np.ndarray):
+        """Apply a 2×2 linear transform about the current center (XY only)."""
+        center = np.asarray(self.current_center, dtype=float)
+        for tree in self.trees:
+            vec = np.array([tree.currentx, tree.currenty], dtype=float) - center
+            x_new, y_new = matrix @ vec
+            tree.currentx = float(x_new + center[0])
+            tree.currenty = float(y_new + center[1])
+
     def _apply_rotation(self, value):
         angle_radians = np.radians(value)
-        cos_angle = np.cos(angle_radians)
-        sin_angle = np.sin(angle_radians)
-        for tree in self.trees:
-            # Translate tree coordinates to origin
-            x_translated = tree.currentx - self.current_center[0]
-            y_translated = tree.currenty - self.current_center[1]
-            # Rotate coordinates
-            x_rotated = x_translated * cos_angle - y_translated * sin_angle
-            y_rotated = x_translated * sin_angle + y_translated * cos_angle
-            # Translate back from origin
-            tree.currentx = x_rotated + self.current_center[0]
-            tree.currenty = y_rotated + self.current_center[1]
+        rot = np.array(
+            [[np.cos(angle_radians), -np.sin(angle_radians)],
+             [np.sin(angle_radians),  np.cos(angle_radians)]]
+        )
+        self._apply_matrix_about_center(rot)
 
     def _apply_flip(self):
-        for tree in self.trees:
-            y_translated = tree.currenty - self.current_center[1]
-            y_translated = -y_translated
-            tree.currenty = y_translated + self.current_center[1]
+        flip = np.array([[1.0, 0.0], [0.0, -1.0]])
+        self._apply_matrix_about_center(flip)
 
     def translate_plot(self, value):
         """Translate the plot by a given vector.
@@ -190,9 +211,13 @@ class Plot:
 
     def coordinate_flip(self):
         """Flip the plot vertically about its current center."""
-        self._apply_rotation(-self.current_rotation)
-        self._apply_flip()
-        self._apply_rotation(self.current_rotation)
+        angle_radians = np.radians(self.current_rotation)
+        rot = np.array(
+            [[np.cos(angle_radians), -np.sin(angle_radians)],
+             [np.sin(angle_radians),  np.cos(angle_radians)]]
+        )
+        reflection = rot @ np.array([[1.0, 0.0], [0.0, -1.0]]) @ rot.T
+        self._apply_matrix_about_center(reflection)
         self.flipped = not self.flipped
 
     def reset_transformations(self):
@@ -330,16 +355,16 @@ class Stand:
         # Determine the column names using the mapping, if provided.
         # For StandID, if the user did not select a column (empty string), assume all rows belong to the provided stand.
         if mapping:
-            stand_col = mapping.get('StandID', '').strip()  # May be empty.
-            plot_col = mapping.get('PlotID', 'PLOT')
-            tree_col = mapping.get('TreeID', 'TreeID')
-            x_col = mapping.get('X', 'X_GROUND')
-            y_col = mapping.get('Y', 'Y_GROUND')
-            dbh_col = mapping.get('DBH', 'STEMDIAM')
-            h_col   = mapping.get('H', 'H') if mapping.get('H', '') != '' else None
-            species_col = mapping.get('Species', 'Species')
-            xc_col = mapping.get('XC', x_col)
-            yc_col = mapping.get('YC', y_col)
+            stand_col = _resolve_mapping_value(mapping, 'StandID', '', allow_none=True)
+            plot_col = _resolve_mapping_value(mapping, 'PlotID', 'PLOT')
+            tree_col = _resolve_mapping_value(mapping, 'TreeID', 'TreeID')
+            x_col = _resolve_mapping_value(mapping, 'X', 'X_GROUND')
+            y_col = _resolve_mapping_value(mapping, 'Y', 'Y_GROUND')
+            dbh_col = _resolve_mapping_value(mapping, 'DBH', 'STEMDIAM')
+            h_col = _resolve_mapping_value(mapping, 'H', 'H', allow_none=True)
+            species_col = _resolve_mapping_value(mapping, 'Species', 'Species')
+            xc_col = _resolve_mapping_value(mapping, 'XC', x_col)
+            yc_col = _resolve_mapping_value(mapping, 'YC', y_col)
         else:
             # Use default column names.
             stand_col = 'Stand'

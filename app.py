@@ -1,7 +1,6 @@
 import os
 import sys
 import queue
-import threading
 import tkinter as tk
 from tkinter import messagebox
 import pygame
@@ -17,7 +16,7 @@ import random
 # Import custom modules
 from trees import Stand, SavedStand
 from chm_plot import CHMPlot, SavedPlot
-from render import PlotCenters, to_screen_coordinates, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
+from render import PlotCenters, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
 from ficp import FractionalICP
 
 # Set up logging

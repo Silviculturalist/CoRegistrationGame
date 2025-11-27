@@ -4,7 +4,25 @@ from scipy.spatial.distance import cdist
 from copy import deepcopy
 from trees import Tree, Plot
 import matplotlib.pyplot as plt
-import logging 
+import logging
+
+
+def _resolve_mapping_value(mapping, key, default):
+    """Return a cleaned mapping value, falling back to default when blank or None."""
+
+    if not mapping:
+        return default
+
+    value = mapping.get(key, default)
+    if value is None:
+        return default
+
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return default
+
+    return value
 
 def Naslund1936kwargs(diameter_cm, *params):
     """
@@ -112,15 +130,12 @@ class CHMPlot(Plot):
         # Read CSV into a DataFrame.
         df = pd.read_csv(file_path, sep=sep)
 
-        # Set column names using mapping if provided.
-        if mapping:
-            x_col = mapping.get('X', 'X').strip() or 'X'
-            y_col = mapping.get('Y', 'Y').strip() or 'Y'
-            height_col = mapping.get('H', 'H').strip() or 'H'
-            idals_col = mapping.get('TreeID', 'IDALS').strip() or 'IDALS'
-            dbh_col = mapping.get('DBH', 'DBH').strip() or 'DBH'
-        else:
-            x_col, y_col, height_col, idals_col, dbh_col = 'X', 'Y', 'H', 'IDALS', 'DBH'
+        # Set column names using mapping if provided, falling back to defaults when empty.
+        x_col = _resolve_mapping_value(mapping, 'X', 'X')
+        y_col = _resolve_mapping_value(mapping, 'Y', 'Y')
+        height_col = _resolve_mapping_value(mapping, 'H', 'H')
+        idals_col = _resolve_mapping_value(mapping, 'TreeID', 'IDALS')
+        dbh_col = _resolve_mapping_value(mapping, 'DBH', 'DBH')
 
         # Check if the height column exists in the data.
         missing_height = height_col not in df.columns
@@ -156,7 +171,7 @@ class CHMPlot(Plot):
                 # Height column is missing. Try to get DBH for imputation.
                 try:
                     stemdiam_value = float(row[dbh_col]) if (dbh_col in row and row[dbh_col] not in [None, ""]) else None
-                except Exception as e:
+                except Exception:
                     stemdiam_value = None
                 height = None  # Let the Tree class impute height.
 

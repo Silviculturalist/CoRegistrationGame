@@ -3,12 +3,11 @@ import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import logging
 # Import the new modular components:
-from trees import Stand, SavedStand
-from chm_plot import CHMPlot, SavedPlot, plot_height_curve
+from trees import Stand
+from chm_plot import CHMPlot, plot_height_curve
 from render import PlotCenters
 # Note: the main application is launched from app.App
 
@@ -97,7 +96,8 @@ def start_program(id, file_path, chm_path, file_column_mapping, chm_column_mappi
     from app import App
 
     app = App(main_window, MyData, MyCHM, MyPlotCenters, startup_root=root, output_folder=output_folder)
-    # Pass the output folder to the App so it writes Trees there.
+    # Pass the output folder to the App so it writes Trees there and retain the reference on the startup window.
+    root.app = app
 
 def toggle_file_impute_dbh():
     if file_dbh_calc_var.get():
