@@ -391,6 +391,14 @@ ttk.Label(params_frame, text="Units: supply DBH in centimeters; model returns he
     column=0, row=3, columnspan=2, padx=5, pady=(6, 2), sticky="w"
 )
 
+naslund_equation = (
+    "Näslund (1936): H = 1.3 + (DBH / (a + b·DBH))^c. "
+    "Parameter 1 = a, Parameter 2 = b, Parameter 3 = c; DBH in centimeters (H in meters)."
+)
+ttk.Label(params_frame, text=naslund_equation, wraplength=420, justify="left").grid(
+    column=0, row=4, columnspan=2, padx=5, pady=(0, 6), sticky="w"
+)
+
 # Graph Frame to display the Näslund height curve
 graph_frame = ttk.Frame(root)
 graph_frame.grid(column=0, row=5, columnspan=2, pady=10)
