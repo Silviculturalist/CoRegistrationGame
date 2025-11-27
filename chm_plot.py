@@ -150,6 +150,12 @@ class CHMPlot(Plot):
         # Convert DataFrame to a list of records.
         records = df.to_dict(orient='records')
 
+        valid_height_units = {'m', 'dm', 'cm'}
+        if height_unit not in valid_height_units:
+            raise ValueError(
+                f"Unsupported height_unit '{height_unit}'. Use one of: {sorted(valid_height_units)}."
+            )
+
         for row in records:
             # If the height column is present, use it.
             if not missing_height:
@@ -160,8 +166,6 @@ class CHMPlot(Plot):
                         height = row[height_col]
                     elif height_unit == 'cm':
                         height = row[height_col] / 10
-                    else:
-                        raise ValueError(f"Unsupported height_unit '{height_unit}'. Use 'm', 'dm', or 'cm'.")
                 except Exception as e:
                     logging.error(f"Error processing height for row: {row} - {e}")
                     continue
