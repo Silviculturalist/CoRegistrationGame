@@ -36,8 +36,6 @@ class FractionalICP:
 
         if self.source.ndim != 2 or self.target.ndim != 2:
             raise ValueError("source and target must be 2D arrays (N, D).")
-        if self.source.shape[0] == 0 or self.target.shape[0] == 0:
-            raise ValueError("source and target must be non-empty.")
 
         self.match_dims = 3 if (self.source.shape[1] >= 3 and self.target.shape[1] >= 3) else 2
         self.lambda_val = lambda_val
@@ -66,7 +64,8 @@ class FractionalICP:
 
     def find_correspondences(self, source, target):
         if len(target) == 0 or len(source) == 0:
-            return np.empty_like(source), np.array([])
+            empty_corr = np.empty((0, target.shape[1]))
+            return empty_corr, np.array([])
         tree = cKDTree(self._xyz_or_xy(target))
         dists, idx = tree.query(self._xyz_or_xy(source), k=1)
         return target[idx], dists
@@ -74,7 +73,7 @@ class FractionalICP:
     def find_optimal_fraction(self, corresponding_targets, distances):
         """Pick the subset size that minimizes FRMSD."""
         N = len(self.source)
-        if N == 0:
+        if N == 0 or len(distances) == 0:
             return 0.0, 0
         order = np.argsort(distances)
         best_val, best_frac, best_N = float("inf"), 0.0, 0
