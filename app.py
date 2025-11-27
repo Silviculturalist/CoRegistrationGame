@@ -57,6 +57,7 @@ class App:
     """
     def __init__(self, root, plot_stand, chm_stand, plot_centers, startup_root=None, output_folder=None):
         self.root = root
+        self.running = True  # Track whether the app is active to avoid post-teardown work.
         self.window_active = True  # assume active initially
         self.startup_root = startup_root  # To restore reference to startup menu.
         # Default to ./Output if none provided (CLI path, tests, etc.)
@@ -98,6 +99,11 @@ class App:
         self.create_ui()
         self.after_id = None
         self.run_pygame()
+
+    @staticmethod
+    def _widget_exists(widget):
+        """Return True if the Tk widget exists and hasn't been destroyed."""
+        return bool(widget) and widget.winfo_exists()
 
     def update_caption(self):
         """Set the Pygame window title with Stand/Plot context."""
@@ -177,20 +183,16 @@ class App:
         self.event_queue.put(('release', key_val.lower() if isinstance(key_val, str) else key_val))
 
     def process_queue(self):
-        # --- Start Change ---
-        # Check if the root window (Toplevel) associated with this App instance still exists.
-        # If not, don't process the queue and don't reschedule.
-        if not self.root or not self.root.winfo_exists():
-            logging.debug("process_queue: Root window destroyed, stopping queue processing.")
-            self.after_id = None  # Ensure it's cleared
-            return  # Stop processing
-        # --- End Change ---
+        """Handle queued keyboard events if the UI is still alive."""
+        if not self.running or not self._widget_exists(self.root):
+            logging.debug("process_queue: root missing or app not running; skipping.")
+            self.after_id = None
+            return
 
         try:
             while True:
                 event_type, key = self.event_queue.get_nowait()
-                # Check window existence again before handling, just in case.
-                if not self.root or not self.root.winfo_exists():
+                if not self._widget_exists(self.root):
                     break
 
                 if event_type == 'press':
@@ -200,21 +202,18 @@ class App:
         except queue.Empty:
             pass
         except tk.TclError as e:
-            # Catch potential errors during key handling if window is destroyed mid-process
             logging.warning(
-                f"process_queue: TclError during event handling (window likely destroyed): {e}"
+                "process_queue: TclError during event handling (window likely destroyed): %s",
+                e,
             )
             self.after_id = None
-            return  # Stop processing
+            return
 
-        # --- Start Change ---
-        # Only reschedule if the window still exists
-        if self.root and self.root.winfo_exists():
+        if self.running and self._widget_exists(self.root):
             self.after_id = self.root.after(10, self.process_queue)
         else:
-            logging.debug("process_queue: Root window destroyed, not rescheduling.")
+            logging.debug("process_queue: not rescheduling after teardown or missing root.")
             self.after_id = None
-        # --- End Change ---
 
     def create_ui(self):
         control_frame = tk.Frame(self.root)
@@ -272,48 +271,52 @@ class App:
 
     
     def update_listboxes(self):
-        # --- Start Change ---
-        # Check if the listbox widgets still exist before trying to modify them
-        if not self.remaining_listbox or not self.remaining_listbox.winfo_exists():
-            logging.warning("update_listboxes: Remaining listbox does not exist. Aborting update.")
+        """Refresh listboxes if widgets and app are still valid."""
+        if not self.running:
+            logging.debug("update_listboxes: app not running; skipping update.")
             return
-        if not self.completed_listbox or not self.completed_listbox.winfo_exists():
-            logging.warning("update_listboxes: Completed listbox does not exist. Aborting update.")
+
+        if not self._widget_exists(self.remaining_listbox):
+            logging.warning(
+                "update_listboxes: Remaining listbox does not exist. Aborting update."
+            )
             return
-        # --- End Change ---
+        if not self._widget_exists(self.completed_listbox):
+            logging.warning(
+                "update_listboxes: Completed listbox does not exist. Aborting update."
+            )
+            return
 
         try:
             self.remaining_listbox.delete(0, tk.END)
             for plotid in self.remaining_plot_ids:
-                # Check listbox existence again before inserting
-                if not self.remaining_listbox.winfo_exists():
+                if not self._widget_exists(self.remaining_listbox):
                     break
                 self.remaining_listbox.insert(tk.END, str(plotid))
 
-            # Check existence before proceeding
-            if not self.remaining_listbox.winfo_exists(): return
+            if not self._widget_exists(self.remaining_listbox):
+                return
 
             current_plotid = str(self.current_plot.plotid)
             listbox_items = self.remaining_listbox.get(0, tk.END)
             if current_plotid in listbox_items:
-                 idx = listbox_items.index(current_plotid)
-                 # Check existence before selection/see
-                 if self.remaining_listbox.winfo_exists():
-                     self.remaining_listbox.selection_clear(0, tk.END) # Clear selection first
-                     self.remaining_listbox.selection_set(idx)
-                     self.remaining_listbox.see(idx)
+                idx = listbox_items.index(current_plotid)
+                if self._widget_exists(self.remaining_listbox):
+                    self.remaining_listbox.selection_clear(0, tk.END)
+                    self.remaining_listbox.selection_set(idx)
+                    self.remaining_listbox.see(idx)
 
-            # Check existence before deleting/inserting into completed listbox
-            if not self.completed_listbox.winfo_exists(): return
+            if not self._widget_exists(self.completed_listbox):
+                return
 
             self.completed_listbox.delete(0, tk.END)
             for plotid in self.completed_plot_ids:
-                if not self.completed_listbox.winfo_exists():
+                if not self._widget_exists(self.completed_listbox):
                     break
                 self.completed_listbox.insert(tk.END, str(plotid))
 
         except tk.TclError as e:
-            logging.error(f"Error updating listboxes (likely window destroyed): {e}")
+            logging.error("Error updating listboxes (likely window destroyed): %s", e)
 
 
 
@@ -977,63 +980,66 @@ class App:
     
     def on_closing(self):
         logging.info("Closing App window...")
-        self.running = False # Stop the pygame loop
+        self.running = False  # Stop the pygame loop and background queue processing
     
         # Stop keyboard listener cleanly
         if self.listener:
             self.stop_listener()
             logging.info("Keyboard listener stopped.")
-    
+
         # Cancel any pending Tkinter 'after' jobs for this window
-        if self.after_id:
-             try:
-                 self.root.after_cancel(self.after_id)
-                 logging.info("Pending 'after' call cancelled.")
-             except tk.TclError as e:
-                  logging.warning(f"Could not cancel 'after' call (window likely closing): {e}")
-             self.after_id = None
+        if self.after_id and self._widget_exists(self.root):
+            try:
+                self.root.after_cancel(self.after_id)
+                logging.info("Pending 'after' call cancelled.")
+            except tk.TclError as e:
+                logging.warning(
+                    "Could not cancel 'after' call (window likely closing): %s", e
+                )
+        self.after_id = None
     
         # Quit Pygame
         try:
             pygame.quit()
             logging.info("Pygame quit successfully.")
         except pygame.error as e:
-             logging.warning(f"Pygame quit error (might be already quit or not init): {e}")
+            logging.warning("Pygame quit error (might be already quit or not init): %s", e)
     
         # Destroy the Toplevel window associated with the App instance
         try:
-            # Ensure self.root still exists before destroying
-            if self.root and self.root.winfo_exists():
-                 self.root.destroy()
-                 logging.info("App Toplevel window destroyed.")
+            if self._widget_exists(self.root):
+                self.root.destroy()
+                logging.info("App Toplevel window destroyed.")
             else:
-                 logging.info("App Toplevel window already destroyed or invalid.")
+                logging.info("App Toplevel window already destroyed or invalid.")
         except tk.TclError as e:
-             logging.error(f"Error destroying App Toplevel window: {e}")
-    
+            logging.error("Error destroying App Toplevel window: %s", e)
+
         # Re-show the startup menu if the reference exists and it's still valid
-        if self.startup_root and self.startup_root.winfo_exists():
+        if self._widget_exists(self.startup_root):
             try:
-                self.startup_root.deiconify() # Show the startup menu again
+                self.startup_root.deiconify()  # Show the startup menu again
                 # Bring the startup window to the front and give it focus
                 try:
                     self.startup_root.lift()
                     self.startup_root.focus_force()
                     self.startup_root.attributes("-topmost", True)
-                    self.startup_root.after(500, lambda: self.startup_root.attributes("-topmost", False))
+                    self.startup_root.after(
+                        500, lambda: self.startup_root.attributes("-topmost", False)
+                    )
                 except Exception as e:
-                    logging.error(f"Error bringing startup window to front: {e}")
+                    logging.error("Error bringing startup window to front: %s", e)
                 logging.info("Startup root deiconified and brought to front.")
             except tk.TclError as e:
-                logging.error(f"Error deiconifying startup root (might be destroyed): {e}")
-                # If we can't show startup, exit the whole application cleanly
+                logging.error(
+                    "Error deiconifying startup root (might be destroyed): %s", e
+                )
                 try:
-                     # Attempt to quit the mainloop associated with the startup root
-                     if self.startup_root and self.startup_root.winfo_exists():
-                         self.startup_root.quit()
-                except:
-                     pass # Ignore errors if already gone
-                sys.exit() # Exit application
+                    if self._widget_exists(self.startup_root):
+                        self.startup_root.quit()
+                except Exception:
+                    pass
+                sys.exit()
         else:
             logging.warning("Startup root reference not found or window destroyed, exiting application.")
             sys.exit() # Exit if no startup menu to return to
