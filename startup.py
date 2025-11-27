@@ -11,18 +11,61 @@ from chm_plot import CHMPlot, plot_height_curve
 from render import PlotCenters
 # Note: the main application is launched from app.App
 
+
+def _normalize_column_name(name: str) -> str:
+    """Return a lowercase, alphanumeric-only version of the column name for matching."""
+
+    return "".join(ch for ch in name.lower() if ch.isalnum())
+
+
+def _auto_map_columns(columns):
+    """Guess sensible column mappings from a list of column names.
+
+    The function returns a dict keyed by the expected field names used in the UI
+    (PlotID, TreeID, X, Y, DBH, H). Values are either the guessed column name or
+    an empty string when no good match is found. Matching is done in two passes:
+    1) exact normalized matches
+    2) substring matches (e.g., "heightm" contains "height")
+    """
+
+    normalized = {col: _normalize_column_name(col) for col in columns}
+
+    candidates = {
+        "PlotID": ["plotid", "plot", "plotnumber", "plotno", "plotnum", "plotnr"],
+        "TreeID": ["treeid", "tree", "id", "idals"],
+        "X": ["xground", "x", "xc", "xcoord", "xcoordinate", "easting", "lon", "longitude"],
+        "Y": ["yground", "y", "yc", "ycoord", "ycoordinate", "northing", "lat", "latitude"],
+        "DBH": ["dbh", "stemdiam", "stemdiameter", "diameter", "diam", "basalarea"],
+        "H": ["h", "height", "treeheight", "ht", "heightm"],
+    }
+
+    def pick(field):
+        target_tokens = candidates[field]
+        # First pass: exact normalized matches.
+        for col, norm in normalized.items():
+            if norm in target_tokens:
+                return col
+        # Second pass: substring matches.
+        for col, norm in normalized.items():
+            if any(token in norm for token in target_tokens):
+                return col
+        return ""
+
+    return {field: pick(field) for field in candidates}
+
 def update_column_options(file_path, sep, comboboxes, mapping_vars):
     if file_path.endswith('.csv'):
         try:
             df = pd.read_csv(file_path, sep=sep)
             # Prepend an empty option to allow clearing the selection.
             columns = [''] + df.columns.tolist()
-            # Reset mapping variables to blank.
-            for var in mapping_vars:
-                mapping_vars[var].set('')
+            # Guess sensible defaults for the mapping widgets.
+            guesses = _auto_map_columns(df.columns)
             # Update each combobox with the file columns plus a blank option.
             for combobox in comboboxes.values():
                 combobox['values'] = columns
+            for var in mapping_vars:
+                mapping_vars[var].set(guesses.get(var, ''))
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read columns from file: {e}")
     else:
