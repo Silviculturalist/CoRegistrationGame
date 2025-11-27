@@ -32,6 +32,8 @@ def _auto_map_columns(columns):
 
     candidates = {
         "PlotID": ["plotid", "plot", "plotnumber", "plotno", "plotnum", "plotnr"],
+        # Keep a generic "id" token for exact matches (plain "ID" columns) but avoid
+        # substring matches so PlotID/StandID headers do not win over TreeID.
         "TreeID": ["treeid", "tree", "id", "idals"],
         "X": ["xground", "x", "xc", "xcoord", "xcoordinate", "easting", "lon", "longitude"],
         "Y": ["yground", "y", "yc", "ycoord", "ycoordinate", "northing", "lat", "latitude"],
@@ -41,15 +43,25 @@ def _auto_map_columns(columns):
 
     def pick(field):
         target_tokens = candidates[field]
-        # First pass: exact normalized matches.
+
+        def score_match(col: str, norm: str):
+            for token in target_tokens:
+                if norm == token:
+                    # Exact matches trump substring matches.
+                    return (2, len(token))
+                # Avoid substring matches for the generic "id" token to prevent
+                # PlotID/StandID columns from being mistaken for TreeID.
+                if token != "id" and token in norm:
+                    return (1, len(token))
+            return (0, 0)
+
+        best_col, best_score = "", (0, 0)
         for col, norm in normalized.items():
-            if norm in target_tokens:
-                return col
-        # Second pass: substring matches.
-        for col, norm in normalized.items():
-            if any(token in norm for token in target_tokens):
-                return col
-        return ""
+            score = score_match(col, norm)
+            if score > best_score:
+                best_col, best_score = col, score
+
+        return best_col
 
     return {field: pick(field) for field in candidates}
 
