@@ -693,7 +693,7 @@ class App:
             self.save_files()
             action = self.show_success_dialog()
             if action == "continue":
-                self.on_closing()
+                self.on_closing(quit_pygame=False)
                 return
             elif action == "exit":
                 self.on_closing()
@@ -747,7 +747,7 @@ class App:
                 action = self.show_success_dialog()
                 if action == "continue":
                     # Return to startup menu and stop touching destroyed widgets.
-                    self.on_closing()
+                    self.on_closing(quit_pygame=False)
                     return
                 elif action == "exit":
                     # Full teardown: close App and the startup menu, then exit process.
@@ -1033,7 +1033,9 @@ class App:
                 "Startup root reference not available during quit request (likely already closed)."
             )
 
-    def on_closing(self):
+    def on_closing(self, quit_pygame: bool = True):
+        """Tear down the game window and optionally shut down Pygame fully."""
+
         logging.info("Closing App window and initiating shutdown sequence...")
         self.running = False  # Stop the pygame loop and background queue processing
 
@@ -1057,8 +1059,12 @@ class App:
 
         # Quit Pygame
         try:
-            pygame.quit()
-            logging.info("Pygame quit successfully.")
+            if quit_pygame:
+                pygame.quit()
+                logging.info("Pygame quit successfully.")
+            else:
+                pygame.display.quit()
+                logging.info("Pygame display quit; core Pygame left initialized for restart.")
         except pygame.error as e:
             logging.warning("Pygame quit error (might be already quit or not init): %s", e)
 
