@@ -125,9 +125,15 @@ class App:
     def stop_listener(self):
         """Stop the pynput keyboard listener if running."""
         if self.listener is not None:
-            self.listener.stop()
+            listener = self.listener
             self.listener = None
-            logging.info("Keyboard listener stopped.")
+            listener.stop()
+            logging.info("Keyboard listener stop requested; awaiting thread join.")
+            try:
+                listener.join()
+                logging.info("Keyboard listener stopped and joined.")
+            except RuntimeError as e:
+                logging.warning("Keyboard listener join failed: %s", e)
 
     def flash_message(self, message, duration=1.5):
         """Set a flash message to be drawn for a given duration (in seconds)."""
@@ -697,11 +703,8 @@ class App:
                 return
             elif action == "exit":
                 self.on_closing()
-                try:
-                    if self.startup_root and self.startup_root.winfo_exists():
-                        self.startup_root.destroy()
-                finally:
-                    sys.exit()
+                self._quit_startup_root()
+                return
         if self.root and self.root.winfo_exists():
             self.update_listboxes()
 
@@ -755,11 +758,8 @@ class App:
                 elif action == "exit":
                     # Full teardown: close App and the startup menu, then exit process.
                     self.on_closing()
-                    try:
-                        if self.startup_root and self.startup_root.winfo_exists():
-                            self.startup_root.destroy()
-                    finally:
-                        sys.exit()
+                    self._quit_startup_root()
+                    return
         else:
             self.store_transformations(self.current_plot)
             if self.current_plot.plotid in self.remaining_plot_ids:
@@ -1012,9 +1012,27 @@ class App:
             self.current_plot = plot
         self.update_listboxes()
     
-    
+
+    def _quit_startup_root(self):
+        """Gracefully quit and destroy the startup Tk root if available."""
+        if self._widget_exists(self.startup_root):
+            try:
+                self.startup_root.quit()
+                logging.info("Startup root quit invoked.")
+            except tk.TclError as e:
+                logging.error("Error quitting startup root: %s", e)
+            try:
+                self.startup_root.destroy()
+                logging.info("Startup root destroyed after quit.")
+            except tk.TclError as e:
+                logging.error("Error destroying startup root: %s", e)
+        else:
+            logging.warning(
+                "Startup root reference not available during quit request (likely already closed)."
+            )
+
     def on_closing(self):
-        logging.info("Closing App window...")
+        logging.info("Closing App window and initiating shutdown sequence...")
         self.running = False  # Stop the pygame loop and background queue processing
 
         # Close any auxiliary popups we created (like keybinds) before teardown
@@ -1023,7 +1041,6 @@ class App:
         # Stop keyboard listener cleanly
         if self.listener:
             self.stop_listener()
-            logging.info("Keyboard listener stopped.")
 
         # Cancel any pending Tkinter 'after' jobs for this window
         if self.after_id and self._widget_exists(self.root):
@@ -1035,14 +1052,14 @@ class App:
                     "Could not cancel 'after' call (window likely closing): %s", e
                 )
         self.after_id = None
-    
+
         # Quit Pygame
         try:
             pygame.quit()
             logging.info("Pygame quit successfully.")
         except pygame.error as e:
             logging.warning("Pygame quit error (might be already quit or not init): %s", e)
-    
+
         # Destroy the Toplevel window associated with the App instance
         try:
             if self._widget_exists(self.root):
@@ -1072,15 +1089,12 @@ class App:
                 logging.error(
                     "Error deiconifying startup root (might be destroyed): %s", e
                 )
-                try:
-                    if self._widget_exists(self.startup_root):
-                        self.startup_root.quit()
-                except Exception:
-                    pass
-                sys.exit()
         else:
-            logging.warning("Startup root reference not found or window destroyed, exiting application.")
-            sys.exit() # Exit if no startup menu to return to
+            logging.warning(
+                "Startup root reference not found or window destroyed; shutdown completes without return target."
+            )
+
+        logging.info("App shutdown sequence complete.")
 
 #Given an arbitrary integer as plotid
 def grey_from_plotid(plotid):
