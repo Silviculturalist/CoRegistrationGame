@@ -827,6 +827,10 @@ class App:
             logging.info("Continue button clicked.")
             try:
                 result["action"] = "continue"
+                try:
+                    dialog.grab_release()
+                except tk.TclError as e:
+                    logging.warning("Error releasing success dialog grab (Continue): %s", e)
                 dialog.destroy()  # Close this dialog first
             except tk.TclError as e:
                 logging.warning(f"Error destroying success dialog (Continue): {e}")
@@ -836,6 +840,10 @@ class App:
             logging.info("Exit button clicked.")
             result["action"] = "exit"
             try:
+                try:
+                    dialog.grab_release()
+                except tk.TclError as e:
+                    logging.warning("Error releasing success dialog grab (Exit): %s", e)
                 dialog.destroy()
             except tk.TclError as e:
                 logging.warning(f"Error destroying success dialog (Exit): {e}")
