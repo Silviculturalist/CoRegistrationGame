@@ -1,6 +1,5 @@
 import numpy as np
 import pygame
-import math
 from scipy.spatial.distance import cdist
 from typing import Tuple
 

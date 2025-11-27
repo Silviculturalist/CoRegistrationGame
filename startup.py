@@ -3,12 +3,11 @@ import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import logging
 # Import the new modular components:
-from trees import Stand, SavedStand
-from chm_plot import CHMPlot, SavedPlot, plot_height_curve
+from trees import Stand
+from chm_plot import CHMPlot, plot_height_curve
 from render import PlotCenters
 # Note: the main application is launched from app.App
 
