@@ -1,6 +1,7 @@
-import numpy as np
 import sys
 from pathlib import Path
+
+import numpy as np
 from scipy.spatial import cKDTree
 
 # Ensure project root is on the Python path
@@ -18,8 +19,7 @@ def _make_cloud(n=200, seed=9):
 
 def _apply_rigid(src, angle_deg, t_xy):
     th = np.deg2rad(angle_deg)
-    R = np.array([[np.cos(th), -np.sin(th)],
-                  [np.sin(th),  np.cos(th)]])
+    R = np.array([[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]])
     xy = src[:, :2] @ R.T + np.asarray(t_xy)
     return np.hstack([xy, src[:, 2][:, None]])
 

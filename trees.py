@@ -1,8 +1,8 @@
-import pandas as pd
+from typing import Optional, cast
+
 import numpy as np
+import pandas as pd
 from scipy.optimize import minimize_scalar
-from copy import deepcopy
-from typing import Optional, Tuple, Dict
 
 
 class Tree:
@@ -18,7 +18,7 @@ class Tree:
         stemdiam_cm: Optional[float] = None,
         height_dm: Optional[float] = None,
         original_plot=None,
-        naslund_params: Optional[Tuple[float, float, float]] = None,
+        naslund_params: Optional[tuple[float, float, float]] = None,
     ):
         """A single tree point with optional DBH/height and Näslund parameters.
 
@@ -71,7 +71,6 @@ class Tree:
         """Diameter (m) from height (m) by inverting Näslund (params in cm) via 1D minimize."""
         params = self.naslund_params or self.NASLUND_DEFAULT
 
-
         def find_diameter(height: float, *params: float) -> float:
             def objective(x):
                 return (height - self.naslund_1936(x, *params)) ** 2
@@ -81,7 +80,7 @@ class Tree:
 
         return min(find_diameter(height, *params), 1.5)
 
-    def impute_height(self, naslund_params: Optional[Tuple[float, float, float]] = None) -> None:
+    def impute_height(self, naslund_params: Optional[tuple[float, float, float]] = None) -> None:
         """Impute missing height using existing diameter and Näslund parameters."""
         if self.height is not None or self.stemdiam is None:
             return
@@ -89,15 +88,13 @@ class Tree:
             self.naslund_params = tuple(naslund_params)
         self.height = self.get_height(self.stemdiam)
 
-    def impute_dbh(self, naslund_params: Optional[Tuple[float, float, float]] = None) -> None:
+    def impute_dbh(self, naslund_params: Optional[tuple[float, float, float]] = None) -> None:
         """Impute missing diameter using existing height and Näslund parameters."""
         if self.stemdiam is not None or self.height is None:
             return
         if naslund_params is not None:
             self.naslund_params = tuple(naslund_params)
         self.stemdiam = self.get_diameter(self.height)
-
-
 
 
 class PlotIterator:
@@ -130,7 +127,9 @@ class Plot:
 
     def _update_centroid(self):
         if self.trees:
-            self.current_center = np.mean(np.array([(tree.currentx, tree.currenty) for tree in self.trees]), axis=0)
+            self.current_center = np.mean(
+                np.array([(tree.currentx, tree.currenty) for tree in self.trees]), axis=0
+            )
         else:
             self.current_center = self.center
 
@@ -214,10 +213,10 @@ class Plot:
     def get_tree_current_array(self):
         """Return an array of [tree_id, currentx, currenty, height] for trees."""
         if not self.trees:
-           return np.empty((0, 4))
-        return np.array([[tree.tree_id, tree.currentx, tree.currenty, tree.height] for tree in self.trees])
-
-
+            return np.empty((0, 4))
+        return np.array(
+            [[tree.tree_id, tree.currentx, tree.currenty, tree.height] for tree in self.trees]
+        )
 
     def get_transform(self):
         """Compute the rigid 2D transform from original to current tree positions.
@@ -281,7 +280,7 @@ class Plot:
             None
         """
         if len(self.trees) != update_array.shape[0]:
-            raise ValueError('Update array length does not match number of trees in the plot')
+            raise ValueError("Update array length does not match number of trees in the plot")
         for tree, (x, y) in zip(self.trees, update_array):
             tree.currentx = x
             tree.currenty = y
@@ -309,57 +308,65 @@ class Stand:
         self,
         ID,
         file_path,
-        mapping: Optional[Dict[str, str]] = None,
-        sep: str = '\t',
+        mapping: Optional[dict[str, str]] = None,
+        sep: str = "\t",
         impute_dbh: bool = True,
         impute_h: bool = True,
-        naslund_params: Optional[Tuple[float, float, float]] = None,
+        naslund_params: Optional[tuple[float, float, float]] = None,
     ):
         self.standid = ID
-        self.plots = []
+        self.plots: list[Plot] = []
         self.center = None
         self.impute_dbh = impute_dbh
         self.impute_h = impute_h
-        self.naslund_params = (
-            tuple(naslund_params) if naslund_params is not None else None
+        self.naslund_params: Optional[tuple[float, float, float]] = (
+            cast(tuple[float, float, float], tuple(naslund_params))
+            if naslund_params is not None
+            else None
         )
 
         # Read CSV using the provided separator.
-        reader = pd.read_csv(file_path, sep=sep).to_dict(orient='records')
+        reader = pd.read_csv(file_path, sep=sep).to_dict(orient="records")
 
         # Determine the column names using the mapping, if provided.
-        # For StandID, if the user did not select a column (empty string), assume all rows belong to the provided stand.
+        # For StandID, if the user did not select a column (empty string),
+        # assume all rows belong to the provided stand.
         if mapping:
-            stand_col = mapping.get('StandID', '').strip()  # May be empty.
-            plot_col = mapping.get('PlotID', 'PLOT')
-            tree_col = mapping.get('TreeID', 'TreeID')
-            x_col = mapping.get('X', 'X_GROUND')
-            y_col = mapping.get('Y', 'Y_GROUND')
-            dbh_col = mapping.get('DBH', 'STEMDIAM')
-            h_col   = mapping.get('H', 'H') if mapping.get('H', '') != '' else None
-            species_col = mapping.get('Species', 'Species')
-            xc_col = mapping.get('XC', x_col)
-            yc_col = mapping.get('YC', y_col)
+            stand_col = mapping.get("StandID", "").strip()  # May be empty.
+            plot_col = mapping.get("PlotID", "PLOT")
+            tree_col = mapping.get("TreeID", "TreeID")
+            x_col = mapping.get("X", "X_GROUND")
+            y_col = mapping.get("Y", "Y_GROUND")
+            dbh_col = mapping.get("DBH", "STEMDIAM")
+            h_col = mapping.get("H", "H") if mapping.get("H", "") != "" else None
+            species_col = mapping.get("Species", "Species")
+            xc_col = mapping.get("XC", x_col)
+            yc_col = mapping.get("YC", y_col)
         else:
             # Use default column names.
-            stand_col = 'Stand'
-            plot_col = 'PLOT'
-            tree_col = 'TreeID'
-            x_col = 'X_GROUND'
-            y_col = 'Y_GROUND'
-            dbh_col = 'STEMDIAM'
-            h_col = 'H'
-            species_col = 'Species'
-            xc_col = 'XC'
-            yc_col = 'YC'
+            stand_col = "Stand"
+            plot_col = "PLOT"
+            tree_col = "TreeID"
+            x_col = "X_GROUND"
+            y_col = "Y_GROUND"
+            dbh_col = "STEMDIAM"
+            h_col = "H"
+            species_col = "Species"
+            xc_col = "XC"
+            yc_col = "YC"
 
-        # If a stand column is specified, filter rows; otherwise, assume all rows belong to this stand.
+        # If a stand column is specified, filter rows; otherwise,
+        # assume all rows belong to this stand.
         if stand_col:
-            reader = [row for row in reader if row.get(stand_col) is not None and int(row[stand_col]) == int(ID)]
+            reader = [
+                row
+                for row in reader
+                if row.get(stand_col) is not None and int(row[stand_col]) == int(ID)
+            ]
         else:
             # No stand column mapping provided—assume every row belongs to the provided stand.
             for row in reader:
-                row['Stand'] = ID
+                row["Stand"] = ID
 
         if not reader:
             raise ValueError(f"No data found for Stand ID: {ID}")
@@ -368,14 +375,16 @@ class Stand:
         for row in reader:
             plot_id = row.get(plot_col)
             tree_id = row.get(tree_col)
+            stemdiam_cm = None
             raw_dbh = row.get(dbh_col) if dbh_col in row else None
-            try:
-                stemdiam_cm = float(raw_dbh) if raw_dbh not in (None, "") else None
-            except (ValueError, TypeError):
-                stemdiam_cm = None
+            if isinstance(raw_dbh, (int, float, str)) and raw_dbh != "":
+                try:
+                    stemdiam_cm = float(raw_dbh)
+                except (ValueError, TypeError):
+                    stemdiam_cm = None
             # Optional height (meters) -> decimeters for Tree
             height_dm = None
-            if h_col and h_col in row and row.get(h_col) not in (None, ''):
+            if h_col and h_col in row and row.get(h_col) not in (None, ""):
                 try:
                     height_dm = float(row[h_col]) * 10.0
                 except (ValueError, TypeError):
@@ -388,10 +397,7 @@ class Stand:
                 species=row.get(species_col),
                 stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
-
-                naslund_params=self.naslund_params
-                if (self.impute_dbh or self.impute_h)
-                else None,
+                naslund_params=self.naslund_params if (self.impute_dbh or self.impute_h) else None,
             )
             if self.impute_h:
                 tree.impute_height(self.naslund_params)
@@ -437,41 +443,57 @@ class Stand:
             except Exception:
                 return np.nan
 
-        data = [(plot.plotid, tree.tree_id, tree.currentx, tree.currenty, _safe_cm(tree.stemdiam), _safe_height(tree.height))
-                for plot in self.plots for tree in plot.trees]
-        return pd.DataFrame(data, columns=['PlotID', 'TreeID', 'CurrentX', 'CurrentY', 'Diameter_cm', 'Height_m'])
+        data = [
+            (
+                plot.plotid,
+                tree.tree_id,
+                tree.currentx,
+                tree.currenty,
+                _safe_cm(tree.stemdiam),
+                _safe_height(tree.height),
+            )
+            for plot in self.plots
+            for tree in plot.trees
+        ]
+        return pd.DataFrame(
+            data, columns=["PlotID", "TreeID", "CurrentX", "CurrentY", "Diameter_cm", "Height_m"]
+        )
 
     def __iter__(self):
         return StandIterator(self)
 
 
 class SavedStand(Stand):
-    def __init__(self, ID, file_path, naslund_params: Optional[Tuple[float, float, float]] = None):
+    def __init__(self, ID, file_path, naslund_params: Optional[tuple[float, float, float]] = None):
         self.standid = ID
-        self.plots = []
+        self.plots: list[Plot] = []
         self.center = None
         self.fp = file_path
-        self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
-        reader = pd.read_csv(file_path).to_dict(orient='records')
+        self.naslund_params: Optional[tuple[float, float, float]] = (
+            cast(tuple[float, float, float], tuple(naslund_params))
+            if naslund_params is not None
+            else None
+        )
+        reader = pd.read_csv(file_path).to_dict(orient="records")
         for row in reader:
-            plot_id = row['PlotID']
-            tree_id = row['TreeID']
+            plot_id = row["PlotID"]
+            tree_id = row["TreeID"]
             height_dm = None
-            if 'Height_m' in row and row['Height_m'] not in (None, ''):
+            if "Height_m" in row and row["Height_m"] not in (None, ""):
                 try:
-                    height_dm = float(row['Height_m']) * 10.0
+                    height_dm = float(row["Height_m"]) * 10.0
                 except (ValueError, TypeError):
                     height_dm = None
             # Parse DBH (cm) robustly (may be '', None, or numeric)
-            raw_dbh = row.get('Diameter_cm')
+            raw_dbh = row.get("Diameter_cm")
             try:
                 stemdiam_cm = float(raw_dbh) if raw_dbh not in (None, "") else None
             except (ValueError, TypeError):
                 stemdiam_cm = None
             tree = Tree(
                 tree_id,
-                x=row['CurrentX'],
-                y=row['CurrentY'],
+                x=row["CurrentX"],
+                y=row["CurrentY"],
                 stemdiam_cm=stemdiam_cm,
                 height_dm=height_dm,
                 naslund_params=self.naslund_params,
@@ -503,6 +525,18 @@ class SavedStand(Stand):
             except Exception:
                 return np.nan
 
-        data = [(plot.plotid, tree.tree_id, tree.currentx, tree.currenty, _safe_cm(tree.stemdiam), _safe_height(tree.height))
-                for plot in self.plots for tree in plot.trees]
-        return pd.DataFrame(data, columns=['PlotID', 'TreeID', 'CurrentX', 'CurrentY', 'Diameter_cm', 'Height_m'])
+        data = [
+            (
+                plot.plotid,
+                tree.tree_id,
+                tree.currentx,
+                tree.currenty,
+                _safe_cm(tree.stemdiam),
+                _safe_height(tree.height),
+            )
+            for plot in self.plots
+            for tree in plot.trees
+        ]
+        return pd.DataFrame(
+            data, columns=["PlotID", "TreeID", "CurrentX", "CurrentY", "Diameter_cm", "Height_m"]
+        )

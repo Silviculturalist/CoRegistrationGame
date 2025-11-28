@@ -1,11 +1,9 @@
 import numpy as np
 import pygame
-import math
 from scipy.spatial.distance import cdist
-from typing import Tuple
 
 
-def to_screen_coordinates(geo_coord, stand_center, scale_factor, screen_size) -> Tuple[int, int]:
+def to_screen_coordinates(geo_coord, stand_center, scale_factor, screen_size) -> tuple[int, int]:
     """World (x,y) -> screen (px,px)."""
     screen_x = (geo_coord[0] - stand_center[0]) * scale_factor + screen_size[0] / 2
     screen_y = (geo_coord[1] - stand_center[1]) * scale_factor + screen_size[1] / 2
@@ -18,7 +16,9 @@ def get_viewport_scale(stand, screen_size) -> float:
     if not all_trees:
         return 1.0
     coords = np.array([(tree.currentx, tree.currenty) for tree in all_trees])
-    furthest_distance = max(np.sqrt((x - stand.center[0]) ** 2 + (y - stand.center[1]) ** 2) for x, y in coords)
+    furthest_distance = max(
+        np.sqrt((x - stand.center[0]) ** 2 + (y - stand.center[1]) ** 2) for x, y in coords
+    )
     max_screen_distance = min(screen_size) / 2 - 20  # padding
     scale_factor = max_screen_distance / (furthest_distance + 2)
     return scale_factor
@@ -28,10 +28,18 @@ class PlotCenters:
     """Utility for drawing/holding plot centers near the stand center."""
 
     def __init__(self, stand):
-        centers = np.array([plot.current_center for plot in stand.plots if plot.current_center is not None])
-        self.centers = centers[cdist(centers, np.array([stand.center])).squeeze() < 70] if centers.size else np.array([])
+        centers = np.array(
+            [plot.current_center for plot in stand.plots if plot.current_center is not None]
+        )
+        self.centers = (
+            centers[cdist(centers, np.array([stand.center])).squeeze() < 70]
+            if centers.size
+            else np.array([])
+        )
 
-    def draw_single_center(self, screen, center, color, alpha, stand_center, scale_factor, screen_size):
+    def draw_single_center(
+        self, screen, center, color, alpha, stand_center, scale_factor, screen_size
+    ):
         pos = to_screen_coordinates(center, stand_center, scale_factor, screen_size)
         r = 2
         alpha_surface = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
@@ -41,7 +49,9 @@ class PlotCenters:
 
     def draw_centers(self, screen, color, alpha, stand_center, scale_factor, screen_size):
         for center in self.centers:
-            self.draw_single_center(screen, center, color, alpha, stand_center, scale_factor, screen_size)
+            self.draw_single_center(
+                screen, center, color, alpha, stand_center, scale_factor, screen_size
+            )
 
 
 def _safe_numeric(val, default=0.0):
@@ -56,14 +66,26 @@ def _safe_numeric(val, default=0.0):
         return default
 
 
-def draw_tree(screen, tree, tree_scale, color, alpha, stand_center, scale_factor, screen_size, tree_component=False):
-    pos = to_screen_coordinates((tree.currentx, tree.currenty), stand_center, scale_factor, screen_size)
+def draw_tree(
+    screen,
+    tree,
+    tree_scale,
+    color,
+    alpha,
+    stand_center,
+    scale_factor,
+    screen_size,
+    tree_component=False,
+):
+    pos = to_screen_coordinates(
+        (tree.currentx, tree.currenty), stand_center, scale_factor, screen_size
+    )
     if tree_component:  # draw proportional to DBH (m) -> cm
         dbh_m = _safe_numeric(tree.stemdiam, 0.0)
-        raw_radius = (dbh_m * 10.0 * scale_factor / 2.0)
-    else:               # draw proportional to Height (m) -> “/10” scale as before
+        raw_radius = dbh_m * 10.0 * scale_factor / 2.0
+    else:  # draw proportional to Height (m) -> “/10” scale as before
         h_m = _safe_numeric(tree.height, 0.0)
-        raw_radius = (h_m / 10.0 * scale_factor / 2.0)
+        raw_radius = h_m / 10.0 * scale_factor / 2.0
     radius = max(int(round(raw_radius * tree_scale)), 1)
 
     alpha_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
@@ -72,14 +94,46 @@ def draw_tree(screen, tree, tree_scale, color, alpha, stand_center, scale_factor
     screen.blit(alpha_surface, (pos[0] - radius, pos[1] - radius))
 
 
-def draw_plot(screen, tree_scale, plot, alpha, stand_center, scale_factor, screen_size, tree_component=False, fill_color=(0, 0, 255)):
+def draw_plot(
+    screen,
+    tree_scale,
+    plot,
+    alpha,
+    stand_center,
+    scale_factor,
+    screen_size,
+    tree_component=False,
+    fill_color=(0, 0, 255),
+):
     for tree in plot.trees:
-        draw_tree(screen, tree, tree_scale, fill_color, alpha, stand_center, scale_factor, screen_size, tree_component)
+        draw_tree(
+            screen,
+            tree,
+            tree_scale,
+            fill_color,
+            alpha,
+            stand_center,
+            scale_factor,
+            screen_size,
+            tree_component,
+        )
 
 
-def draw_chm(stems, screen, tree_scale, alpha, stand_center, scale_factor, screen_size, tree_component=False):
+def draw_chm(
+    stems, screen, tree_scale, alpha, stand_center, scale_factor, screen_size, tree_component=False
+):
     for tree in stems:
-        draw_tree(screen, tree, tree_scale, (107, 107, 107), alpha, stand_center, scale_factor, screen_size, tree_component)
+        draw_tree(
+            screen,
+            tree,
+            tree_scale,
+            (107, 107, 107),
+            alpha,
+            stand_center,
+            scale_factor,
+            screen_size,
+            tree_component,
+        )
 
 
 def draw_arrow(screen, arrow_position, target_position, color=(0, 0, 0)):

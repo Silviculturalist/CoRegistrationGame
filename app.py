@@ -1,32 +1,43 @@
-import os
-import sys
-import queue
-import threading
-import tkinter as tk
-from tkinter import messagebox
-import pygame
 import logging
+import os
 import platform
-import subprocess
-from pynput import keyboard
-import pandas as pd
-import numpy as np
-from copy import deepcopy
-import time
+import queue
 import random
-# Import custom modules
-from trees import Stand, SavedStand
+import subprocess
+import sys
+import time
+import tkinter as tk
+from copy import deepcopy
+from tkinter import messagebox
+from typing import Optional, Union
+
+import numpy as np
+import pandas as pd
+import pygame
+from pynput import keyboard
+
 from chm_plot import CHMPlot, SavedPlot
-from render import PlotCenters, to_screen_coordinates, get_viewport_scale, draw_plot, draw_chm, draw_polygon, is_point_in_polygon
 from ficp import FractionalICP
+from render import (
+    PlotCenters,
+    draw_chm,
+    draw_plot,
+    draw_polygon,
+    get_viewport_scale,
+    is_point_in_polygon,
+)
+
+# Import custom modules
+from trees import Plot, SavedStand, Stand
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
 
 def open_in_finder(folder_path):
     """Open the given folder in the system file explorer."""
     if platform.system() == "Windows":
-        os.startfile(folder_path)
+        os.startfile(folder_path)  # type: ignore[attr-defined]
     elif platform.system() == "Darwin":
         subprocess.Popen(["open", folder_path])
     else:  # Assume Linux or similar
@@ -38,6 +49,7 @@ TRANSLATE_STEP = 0.5
 PAN_STEP = 5
 ZOOM_STEP = 0.3
 TREE_SCALE_INITIAL = 1.0
+
 
 class App:
     """Main application integrating a Tkinter control panel and a Pygame viewport.
@@ -55,41 +67,54 @@ class App:
         scale_factor (float): Pixels per world unit for the viewport.
         output_folder (str): Optional user-selected folder for tree CSV outputs.
     """
-    def __init__(self, root, plot_stand, chm_stand, plot_centers, startup_root=None, output_folder=None):
-        self.root = root
+
+    def __init__(
+        self,
+        root: Union[tk.Tk, tk.Toplevel],
+        plot_stand: Stand,
+        chm_stand: Union[CHMPlot, SavedPlot],
+        plot_centers: Optional[PlotCenters],
+        startup_root: Optional[Union[tk.Tk, tk.Toplevel]] = None,
+        output_folder: Optional[str] = None,
+    ):
+        self.root: Union[tk.Tk, tk.Toplevel] = root
         self.window_active = True  # assume active initially
-        self.startup_root = startup_root  # To restore reference to startup menu.
+        self.startup_root: Optional[Union[tk.Tk, tk.Toplevel]] = (
+            startup_root  # To restore reference to startup menu.
+        )
         # Default to ./Output if none provided (CLI path, tests, etc.)
         self.output_folder = output_folder or os.path.join(os.getcwd(), "Output")
         os.makedirs(self.output_folder, exist_ok=True)
         # Bind both tkinter focus events (in case the overall app loses focus)
         self.root.bind("<FocusIn>", self.on_focus_in)
         self.root.bind("<FocusOut>", self.on_focus_out)
-        
+
         self.plot_stand = plot_stand
         self.chm_stand = chm_stand
         self.plot_centers = plot_centers
         self.last_space_press = None
         self.display_mode = 0
         # Display Mode
-        # 0 = show all trees 
+        # 0 = show all trees
         # 1 = show only unmatched trees
         # 2 = show end result (both layers together).
         self.current_plot_index = 0
-        self.remaining_plot_ids = [p.plotid for p in plot_stand.plots]
-        self.completed_plot_ids = []
+        self.remaining_plot_ids: list[Union[str, int]] = [p.plotid for p in plot_stand.plots]
+        self.completed_plot_ids: list[Union[str, int]] = []
         self.current_plot = plot_stand.plots[self.current_plot_index]
-        self.stand_center = deepcopy(plot_stand.center)
+        self.stand_center = (
+            deepcopy(plot_stand.center) if plot_stand.center is not None else (0.0, 0.0)
+        )
         self.scale_factor = get_viewport_scale(plot_stand, (800, 600))
-        self.plot_transformations = {}
+        self.plot_transformations: dict[Union[str, int], dict[str, object]] = {}
         self.drawing_polygon = False
-        self.polygon_points = []
-        self.new_plots = []
+        self.polygon_points: list[tuple[float, float]] = []
+        self.new_plots: list[Plot] = []
         self.translate_step = TRANSLATE_STEP
         self.pan_step = PAN_STEP
         self.zoom_step = ZOOM_STEP
         self.tree_scale = TREE_SCALE_INITIAL
-        self.event_queue = queue.Queue()
+        self.event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.listener = None  # Will hold the pynput listener instance.
         self.flash_text = None  # For flashing text messages
         self.flash_end_time = 0
@@ -139,7 +164,9 @@ class App:
         """Rebuild remaining and completed plot ID queues after plot mutations."""
         existing_ids = [p.plotid for p in self.plot_stand.plots if len(p.trees) > 0]
         self.completed_plot_ids = [pid for pid in self.completed_plot_ids if pid in existing_ids]
-        self.remaining_plot_ids = [pid for pid in existing_ids if pid not in self.completed_plot_ids]
+        self.remaining_plot_ids = [
+            pid for pid in existing_ids if pid not in self.completed_plot_ids
+        ]
         # Update current_plot_index to match current_plot's position
         if self.current_plot:
             idx, _ = self._plot_by_id(self.current_plot.plotid)
@@ -165,7 +192,7 @@ class App:
             key_val = key.char
         except AttributeError:
             key_val = key.name
-        self.event_queue.put(('press', key_val.lower() if isinstance(key_val, str) else key_val))
+        self.event_queue.put(("press", key_val.lower() if isinstance(key_val, str) else key_val))
 
     def on_release(self, key):
         if not self.window_active:
@@ -174,43 +201,46 @@ class App:
             key_val = key.char
         except AttributeError:
             key_val = key.name
-        self.event_queue.put(('release', key_val.lower() if isinstance(key_val, str) else key_val))
+        self.event_queue.put(("release", key_val.lower() if isinstance(key_val, str) else key_val))
 
     def process_queue(self):
         # --- Start Change ---
         # Check if the root window (Toplevel) associated with this App instance still exists.
         # If not, don't process the queue and don't reschedule.
         if not self.root or not self.root.winfo_exists():
-             logging.debug("process_queue: Root window destroyed, stopping queue processing.")
-             self.after_id = None # Ensure it's cleared
-             return # Stop processing
+            logging.debug("process_queue: Root window destroyed, stopping queue processing.")
+            self.after_id = None  # Ensure it's cleared
+            return  # Stop processing
         # --- End Change ---
 
         try:
             while True:
                 event_type, key = self.event_queue.get_nowait()
                 # Check window existence again before handling, just in case.
-                if not self.root or not self.root.winfo_exists(): break
+                if not self.root or not self.root.winfo_exists():
+                    break
 
-                if event_type == 'press':
+                if event_type == "press":
                     self.handle_keydown(key)
-                elif event_type == 'release':
+                elif event_type == "release":
                     self.handle_keyup(key)
         except queue.Empty:
             pass
         except tk.TclError as e:
-             # Catch potential errors during key handling if window is destroyed mid-process
-             logging.warning(f"process_queue: TclError during event handling (window likely destroyed): {e}")
-             self.after_id = None
-             return # Stop processing
+            # Catch potential errors during key handling if window is destroyed mid-process
+            logging.warning(
+                f"process_queue: TclError during event handling (window likely destroyed): {e}"
+            )
+            self.after_id = None
+            return  # Stop processing
 
         # --- Start Change ---
         # Only reschedule if the window still exists
         if self.root and self.root.winfo_exists():
             self.after_id = self.root.after(10, self.process_queue)
         else:
-             logging.debug("process_queue: Root window destroyed, not rescheduling.")
-             self.after_id = None
+            logging.debug("process_queue: Root window destroyed, not rescheduling.")
+            self.after_id = None
         # --- End Change ---
 
     def create_ui(self):
@@ -220,30 +250,60 @@ class App:
         button_frame.pack(side=tk.TOP, fill=tk.X)
 
         tk.Label(button_frame, text="Camera:").grid(row=0, column=0, padx=5, pady=5)
-        tk.Button(button_frame, text="Pan Up", command=lambda: self.pan('up')).grid(row=0, column=1)
-        tk.Button(button_frame, text="Pan Left", command=lambda: self.pan('left')).grid(row=0, column=2)
-        tk.Button(button_frame, text="Pan Right", command=lambda: self.pan('right')).grid(row=0, column=3)
-        tk.Button(button_frame, text="Pan Down", command=lambda: self.pan('down')).grid(row=0, column=4)
-        tk.Button(button_frame, text="Zoom In", command=lambda: self.zoom('in')).grid(row=0, column=5)
-        tk.Button(button_frame, text="Zoom Out", command=lambda: self.zoom('out')).grid(row=0, column=6)
+        tk.Button(button_frame, text="Pan Up", command=lambda: self.pan("up")).grid(row=0, column=1)
+        tk.Button(button_frame, text="Pan Left", command=lambda: self.pan("left")).grid(
+            row=0, column=2
+        )
+        tk.Button(button_frame, text="Pan Right", command=lambda: self.pan("right")).grid(
+            row=0, column=3
+        )
+        tk.Button(button_frame, text="Pan Down", command=lambda: self.pan("down")).grid(
+            row=0, column=4
+        )
+        tk.Button(button_frame, text="Zoom In", command=lambda: self.zoom("in")).grid(
+            row=0, column=5
+        )
+        tk.Button(button_frame, text="Zoom Out", command=lambda: self.zoom("out")).grid(
+            row=0, column=6
+        )
         tk.Button(button_frame, text="Flash", command=self.toggle_flash).grid(row=0, column=7)
 
         tk.Label(button_frame, text="Plot:").grid(row=0, column=8, padx=5, pady=5)
-        tk.Button(button_frame, text="Shift Up", command=lambda: self.shift_plot('up')).grid(row=0, column=9)
-        tk.Button(button_frame, text="Shift Left", command=lambda: self.shift_plot('left')).grid(row=0, column=10)
-        tk.Button(button_frame, text="Shift Right", command=lambda: self.shift_plot('right')).grid(row=0, column=11)
-        tk.Button(button_frame, text="Shift Down", command=lambda: self.shift_plot('down')).grid(row=0, column=12)
-        tk.Button(button_frame, text="Rotate Left", command=lambda: self.rotate_plot('left')).grid(row=0, column=13)
-        tk.Button(button_frame, text="Rotate Right", command=lambda: self.rotate_plot('right')).grid(row=0, column=14)
+        tk.Button(button_frame, text="Shift Up", command=lambda: self.shift_plot("up")).grid(
+            row=0, column=9
+        )
+        tk.Button(button_frame, text="Shift Left", command=lambda: self.shift_plot("left")).grid(
+            row=0, column=10
+        )
+        tk.Button(button_frame, text="Shift Right", command=lambda: self.shift_plot("right")).grid(
+            row=0, column=11
+        )
+        tk.Button(button_frame, text="Shift Down", command=lambda: self.shift_plot("down")).grid(
+            row=0, column=12
+        )
+        tk.Button(button_frame, text="Rotate Left", command=lambda: self.rotate_plot("left")).grid(
+            row=0, column=13
+        )
+        tk.Button(
+            button_frame, text="Rotate Right", command=lambda: self.rotate_plot("right")
+        ).grid(row=0, column=14)
         tk.Button(button_frame, text="Flip", command=self.flip_plot).grid(row=0, column=15)
         tk.Button(button_frame, text="Join", command=self.join_plot).grid(row=0, column=16)
         tk.Button(button_frame, text="Ignore", command=self.ignore_plot).grid(row=0, column=17)
         tk.Button(button_frame, text="Remove", command=self.remove_plot).grid(row=0, column=18)
-        tk.Button(button_frame, text="Confirm Plot", command=self.confirm_plot).grid(row=0, column=19)
-        tk.Button(button_frame, text="Reset Plot Position", command=self.reset_plot_position).grid(row=0, column=20)
+        tk.Button(button_frame, text="Confirm Plot", command=self.confirm_plot).grid(
+            row=0, column=19
+        )
+        tk.Button(button_frame, text="Reset Plot Position", command=self.reset_plot_position).grid(
+            row=0, column=20
+        )
         tk.Button(button_frame, text="Step Back", command=self.step_back).grid(row=0, column=21)
-        tk.Button(button_frame, text="New Plot from Polygon", command=self.new_plot_from_polygon).grid(row=0, column=22)
-        tk.Button(button_frame, text="Flash Trees", command=self.toggle_flash).grid(row=0, column=23)
+        tk.Button(
+            button_frame, text="New Plot from Polygon", command=self.new_plot_from_polygon
+        ).grid(row=0, column=22)
+        tk.Button(button_frame, text="Flash Trees", command=self.toggle_flash).grid(
+            row=0, column=23
+        )
 
         self.pygame_frame = tk.Frame(self.root, width=800, height=600)
         self.pygame_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -257,7 +317,7 @@ class App:
         self.remaining_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         for plotid in self.remaining_plot_ids:
             self.remaining_listbox.insert(tk.END, plotid)
-        self.remaining_listbox.bind('<<ListboxSelect>>', self.on_remaining_plot_select)
+        self.remaining_listbox.bind("<<ListboxSelect>>", self.on_remaining_plot_select)
 
         completed_frame = tk.LabelFrame(list_frame, text="Completed Plots", padx=5, pady=5)
         completed_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
@@ -267,7 +327,6 @@ class App:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.root.after(10, self.process_queue)
 
-    
     def update_listboxes(self):
         # --- Start Change ---
         # Check if the listbox widgets still exist before trying to modify them
@@ -288,20 +347,23 @@ class App:
                 self.remaining_listbox.insert(tk.END, str(plotid))
 
             # Check existence before proceeding
-            if not self.remaining_listbox.winfo_exists(): return
+            if not self.remaining_listbox.winfo_exists():
+                return
 
-            current_plotid = str(self.current_plot.plotid)
-            listbox_items = self.remaining_listbox.get(0, tk.END)
-            if current_plotid in listbox_items:
-                 idx = listbox_items.index(current_plotid)
-                 # Check existence before selection/see
-                 if self.remaining_listbox.winfo_exists():
-                     self.remaining_listbox.selection_clear(0, tk.END) # Clear selection first
-                     self.remaining_listbox.selection_set(idx)
-                     self.remaining_listbox.see(idx)
+            if self.current_plot:
+                current_plotid = str(self.current_plot.plotid)
+                listbox_items = self.remaining_listbox.get(0, tk.END)
+                if current_plotid in listbox_items:
+                    idx = listbox_items.index(current_plotid)
+                    # Check existence before selection/see
+                    if self.remaining_listbox.winfo_exists():
+                        self.remaining_listbox.selection_clear(0, tk.END)  # Clear selection first
+                        self.remaining_listbox.selection_set(idx)
+                        self.remaining_listbox.see(idx)
 
             # Check existence before deleting/inserting into completed listbox
-            if not self.completed_listbox.winfo_exists(): return
+            if not self.completed_listbox.winfo_exists():
+                return
 
             self.completed_listbox.delete(0, tk.END)
             for plotid in self.completed_plot_ids:
@@ -312,12 +374,12 @@ class App:
         except tk.TclError as e:
             logging.error(f"Error updating listboxes (likely window destroyed): {e}")
 
-
-
     def on_remaining_plot_select(self, event):
         selection = event.widget.curselection()
         if selection:
-            selected_plotid = event.widget.get(selection[0])  # keep as string; robust for non-numeric IDs
+            selected_plotid = event.widget.get(
+                selection[0]
+            )  # keep as string; robust for non-numeric IDs
             idx, plot = self._plot_by_id(selected_plotid)
             if plot is not None:
                 self.current_plot_index = idx
@@ -327,18 +389,16 @@ class App:
     def run_pygame(self):
         # Only set windib on Windows for compatibility on other platforms.
         if platform.system() == "Windows":
-            os.environ.setdefault('SDL_VIDEODRIVER', 'windib')
+            os.environ.setdefault("SDL_VIDEODRIVER", "windib")
         pygame.init()
         # Create a font for flash messages.
         self.font = pygame.font.SysFont(None, 36)
         self.screen_size = (800, 600)
         # Use SCALED | RESIZABLE for smoother resizing in windowed mode.
-        self.screen = pygame.display.set_mode(
-            self.screen_size, pygame.SCALED | pygame.RESIZABLE
-        )
+        self.screen = pygame.display.set_mode(self.screen_size, pygame.SCALED | pygame.RESIZABLE)
         self.update_caption()
 
-        self.root.lower() #Send tk window to back
+        self.root.lower()  # Send tk window to back
 
         self.running = True
         # Start the listener initially.
@@ -385,27 +445,68 @@ class App:
             if self.chm_stand.trees:
                 if self.display_mode == 0:
                     # Draw all CHM trees (by HEIGHT)
-                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale,
-                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=False)
+                    draw_chm(
+                        stems=self.chm_stand.alltrees,
+                        screen=self.screen,
+                        tree_scale=self.tree_scale,
+                        alpha=1,
+                        stand_center=self.stand_center,
+                        scale_factor=self.scale_factor,
+                        screen_size=self.screen_size,
+                        tree_component=False,
+                    )
                 elif self.display_mode == 1:
                     # Draw only unmatched CHM trees (by HEIGHT)
-                    draw_chm(stems=self.chm_stand.trees, screen=self.screen, tree_scale=self.tree_scale,
-                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=False)
+                    draw_chm(
+                        stems=self.chm_stand.trees,
+                        screen=self.screen,
+                        tree_scale=self.tree_scale,
+                        alpha=1,
+                        stand_center=self.stand_center,
+                        scale_factor=self.scale_factor,
+                        screen_size=self.screen_size,
+                        tree_component=False,
+                    )
                 elif self.display_mode == 2:
                     # Draw end result: both matched and unmatched CHM trees (by HEIGHT)
-                    draw_chm(stems=self.chm_stand.alltrees, screen=self.screen, tree_scale=self.tree_scale,
-                             alpha=1, stand_center=self.stand_center, scale_factor=self.scale_factor, screen_size=self.screen_size, tree_component=False)
-                    for i, plot in enumerate(self.plot_stand.plots):
-                        draw_plot(screen=self.screen, tree_scale=self.tree_scale, plot=plot, alpha=1,
-                                  stand_center=self.stand_center, scale_factor=self.scale_factor,
-                                  screen_size=self.screen_size, tree_component=True, fill_color=(0,255,0))
+                    draw_chm(
+                        stems=self.chm_stand.alltrees,
+                        screen=self.screen,
+                        tree_scale=self.tree_scale,
+                        alpha=1,
+                        stand_center=self.stand_center,
+                        scale_factor=self.scale_factor,
+                        screen_size=self.screen_size,
+                        tree_component=False,
+                    )
+                    for plot in self.plot_stand.plots:
+                        draw_plot(
+                            screen=self.screen,
+                            tree_scale=self.tree_scale,
+                            plot=plot,
+                            alpha=1,
+                            stand_center=self.stand_center,
+                            scale_factor=self.scale_factor,
+                            screen_size=self.screen_size,
+                            tree_component=True,
+                            fill_color=(0, 255, 0),
+                        )
 
             if self.current_plot:
-                draw_plot(self.screen, self.tree_scale, self.current_plot, 1, self.stand_center, self.scale_factor, self.screen_size, tree_component=True)
+                draw_plot(
+                    self.screen,
+                    self.tree_scale,
+                    self.current_plot,
+                    1,
+                    self.stand_center,
+                    self.scale_factor,
+                    self.screen_size,
+                    tree_component=True,
+                )
             if self.drawing_polygon:
                 draw_polygon(self.screen, self.polygon_points)
 
-            #Draw flash message if active
+            # Draw flash message if active
             self.draw_flash_message()
             if self.show_help:
                 self.draw_help_overlay()
@@ -423,7 +524,7 @@ class App:
         """Draws the flash message on the pygame screen if it is still active."""
         if self.flash_text and time.time() < self.flash_end_time:
             # Split the message into lines.
-            lines = self.flash_text.split('\n')
+            lines = self.flash_text.split("\n")
             total_height = 0
             surfaces = []
             for line in lines:
@@ -439,7 +540,6 @@ class App:
         elif self.flash_text:
             # Clear the flash message when the duration has expired.
             self.flash_text = None
-
 
     def draw_help_overlay(self):
         lines = ["Shortcuts:"] + [f"{k}: {v}" for (k, v) in self.help_entries]
@@ -470,34 +570,34 @@ class App:
     def build_keymaps(self):
         """Create dictionaries for keydown and keyup handlers + display help text."""
         kd = {
-            'left':  lambda: self.shift_plot('left'),
-            'right': lambda: self.shift_plot('right'),
-            'up':    lambda: self.shift_plot('up'),
-            'down':  lambda: self.shift_plot('down'),
-            'w':     lambda: self.pan('up'),
-            'a':     lambda: self.pan('left'),
-            's':     lambda: self.pan('down'),
-            'd':     lambda: self.pan('right'),
-            '1':     lambda: self.zoom('in'),
-            '2':     lambda: self.zoom('out'),
-            '6':     lambda: setattr(self, 'tree_scale', self.tree_scale * 1.1),
-            '7':     lambda: setattr(self, 'tree_scale', self.tree_scale * 0.9),
-            '8':     lambda: setattr(self, 'tree_scale', TREE_SCALE_INITIAL),
-            'e':     lambda: self.rotate_plot('left'),
-            'r':     lambda: self.rotate_plot('right'),
-            'h':     self.toggle_help,
+            "left": lambda: self.shift_plot("left"),
+            "right": lambda: self.shift_plot("right"),
+            "up": lambda: self.shift_plot("up"),
+            "down": lambda: self.shift_plot("down"),
+            "w": lambda: self.pan("up"),
+            "a": lambda: self.pan("left"),
+            "s": lambda: self.pan("down"),
+            "d": lambda: self.pan("right"),
+            "1": lambda: self.zoom("in"),
+            "2": lambda: self.zoom("out"),
+            "6": lambda: setattr(self, "tree_scale", self.tree_scale * 1.1),
+            "7": lambda: setattr(self, "tree_scale", self.tree_scale * 0.9),
+            "8": lambda: setattr(self, "tree_scale", TREE_SCALE_INITIAL),
+            "e": lambda: self.rotate_plot("left"),
+            "r": lambda: self.rotate_plot("right"),
+            "h": self.toggle_help,
         }
         ku = {
-            'n':     self.ignore_plot,
-            '.':     self.mark_unplaceable,
-            'b':     self.step_back,
-            'c':     self.confirm_plot,
-            'o':     self.reset_plot_position,
-            'f':     self.flip_plot,
-            'j':     self.join_plot,
-            'p':     self.toggle_polygon_mode,
-            'x':     self.remove_plot,
-            'space': self.handle_space,
+            "n": self.ignore_plot,
+            ".": self.mark_unplaceable,
+            "b": self.step_back,
+            "c": self.confirm_plot,
+            "o": self.reset_plot_position,
+            "f": self.flip_plot,
+            "j": self.join_plot,
+            "p": self.toggle_polygon_mode,
+            "x": self.remove_plot,
+            "space": self.handle_space,
         }
         self.help_entries = [
             ("W/A/S/D", "Pan"),
@@ -533,19 +633,31 @@ class App:
             self.root.after(300, self.toggle_flash)
 
     def pan(self, direction):
-        if direction in ['w', 'up']:
-            self.stand_center = (self.stand_center[0], self.stand_center[1] + self.pan_step / self.scale_factor)
-        elif direction in ['s', 'down']:
-            self.stand_center = (self.stand_center[0], self.stand_center[1] - self.pan_step / self.scale_factor)
-        elif direction in ['a', 'left']:
-            self.stand_center = (self.stand_center[0] + self.pan_step / self.scale_factor, self.stand_center[1])
-        elif direction in ['d', 'right']:
-            self.stand_center = (self.stand_center[0] - self.pan_step / self.scale_factor, self.stand_center[1])
+        if direction in ["w", "up"]:
+            self.stand_center = (
+                self.stand_center[0],
+                self.stand_center[1] + self.pan_step / self.scale_factor,
+            )
+        elif direction in ["s", "down"]:
+            self.stand_center = (
+                self.stand_center[0],
+                self.stand_center[1] - self.pan_step / self.scale_factor,
+            )
+        elif direction in ["a", "left"]:
+            self.stand_center = (
+                self.stand_center[0] + self.pan_step / self.scale_factor,
+                self.stand_center[1],
+            )
+        elif direction in ["d", "right"]:
+            self.stand_center = (
+                self.stand_center[0] - self.pan_step / self.scale_factor,
+                self.stand_center[1],
+            )
 
     def zoom(self, direction):
-        if direction == 'in':
-            self.scale_factor *= (1 + self.zoom_step)
-        elif direction == 'out':
+        if direction == "in":
+            self.scale_factor *= 1 + self.zoom_step
+        elif direction == "out":
             self.scale_factor = max(0.01, (1 - self.zoom_step) * self.scale_factor)
 
     def toggle_flash(self):
@@ -560,25 +672,26 @@ class App:
 
     def toggle_help(self):
         self.show_help = not self.show_help
+
     def shift_plot(self, direction):
-        if direction == 'up':
+        if direction == "up":
             if self.current_plot:
                 self.current_plot.translate_plot((0, -self.translate_step))
-        elif direction == 'down':
+        elif direction == "down":
             if self.current_plot:
                 self.current_plot.translate_plot((0, self.translate_step))
-        elif direction == 'left':
+        elif direction == "left":
             if self.current_plot:
                 self.current_plot.translate_plot((-self.translate_step, 0))
-        elif direction == 'right':
+        elif direction == "right":
             if self.current_plot:
                 self.current_plot.translate_plot((self.translate_step, 0))
 
     def rotate_plot(self, direction):
-        if direction == 'left':
+        if direction == "left":
             if self.current_plot:
                 self.current_plot.rotate_plot(5)
-        elif direction == 'right':
+        elif direction == "right":
             if self.current_plot:
                 self.current_plot.rotate_plot(-5)
 
@@ -595,7 +708,9 @@ class App:
             return
         # Build candidate 3D arrays (x, y, height) and fall back to 2D if any height is missing.
         src_3d = self.current_plot.get_tree_current_array()[:, -3:]
-        tgt_3d = np.array([[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees], dtype=object)
+        tgt_3d = np.array(
+            [[tree.x, tree.y, tree.height] for tree in self.chm_stand.trees], dtype=object
+        )
 
         use_3d = True
         try:
@@ -612,7 +727,9 @@ class App:
         else:
             # Fallback: 2D ICP on x,y only
             source_array = self.current_plot.get_tree_current_array()[:, 1:3].astype(float)
-            target_array = np.array([[tree.x, tree.y] for tree in self.chm_stand.trees], dtype=float)
+            target_array = np.array(
+                [[tree.x, tree.y] for tree in self.chm_stand.trees], dtype=float
+            )
 
         icp = FractionalICP(source_array, target_array)
         icp.run()
@@ -621,14 +738,15 @@ class App:
 
     def ignore_plot(self):
         """Skip to the next remaining plot without altering queues or writing transforms."""
-        if not self.remaining_plot_ids:
+        if not self.remaining_plot_ids or self.current_plot is None:
             return
         current_id = self.current_plot.plotid
         if current_id in self.remaining_plot_ids:
             pos = self.remaining_plot_ids.index(current_id)
             next_plot_id = self.remaining_plot_ids[(pos + 1) % len(self.remaining_plot_ids)]
         else:
-            # If current plot isn't in remaining (e.g., already completed), go to the first remaining.
+            # If current plot isn't in remaining (e.g., already completed),
+            # go to the first remaining.
             next_plot_id = self.remaining_plot_ids[0]
         idx, plot = self._plot_by_id(next_plot_id)
         if plot is not None:
@@ -637,6 +755,8 @@ class App:
         self.update_listboxes()
 
     def mark_unplaceable(self):
+        if self.current_plot is None:
+            return
         self.store_transformations(self.current_plot, fail=True)
         if self.current_plot.plotid in self.remaining_plot_ids:
             idx_in_queue = self.remaining_plot_ids.index(self.current_plot.plotid)
@@ -652,19 +772,34 @@ class App:
             self.save_files()
             action = self.show_success_dialog()
             if action == "continue":
-                self.on_closing()
+                # Defer teardown to next Tk loop tick
+                try:
+                    self.root.after(0, self.on_closing)
+                except tk.TclError:
+                    pass
                 return
             elif action == "exit":
-                self.on_closing()
+                # Defer both teardown and exit so the dialog close fully unwinds
+                def _deferred_full_exit():
+                    try:
+                        self.on_closing()
+                    finally:
+                        try:
+                            if self.startup_root and self.startup_root.winfo_exists():
+                                self.startup_root.destroy()
+                        finally:
+                            sys.exit()
+
                 try:
-                    if self.startup_root and self.startup_root.winfo_exists():
-                        self.startup_root.destroy()
-                finally:
-                    sys.exit()
+                    self.root.after(0, _deferred_full_exit)
+                except tk.TclError:
+                    _deferred_full_exit()
         if self.root and self.root.winfo_exists():
             self.update_listboxes()
 
     def remove_plot(self):
+        if self.current_plot is None:
+            return
         if self.current_plot in self.new_plots:
             # Preserve current coordinates when moving trees back
             for tree in list(self.current_plot.trees):
@@ -692,11 +827,15 @@ class App:
         self.update_listboxes()
 
     def confirm_plot(self):
+        if self.current_plot is None:
+            return
         # Check if we're on the last plot and confirm before final saving.
         if len(self.remaining_plot_ids) == 1:
-            confirm_save = messagebox.askyesno("Confirm Save",
-                                            "You have confirmed the last plot.\n\n"
-                                            "Are you sure you want to save the results to files?")
+            confirm_save = messagebox.askyesno(
+                "Confirm Save",
+                "You have confirmed the last plot.\n\n"
+                "Are you sure you want to save the results to files?",
+            )
             if not confirm_save:
                 return
             else:
@@ -708,17 +847,29 @@ class App:
                 self.save_files()
                 action = self.show_success_dialog()
                 if action == "continue":
-                    # Return to startup menu and stop touching destroyed widgets.
-                    self.on_closing()
+                    # Defer teardown to next Tk loop tick
+                    try:
+                        self.root.after(0, self.on_closing)
+                    except tk.TclError:
+                        pass
                     return
                 elif action == "exit":
-                    # Full teardown: close App and the startup menu, then exit process.
-                    self.on_closing()
+                    # Defer both teardown and exit so the dialog close fully unwinds
+                    def _deferred_full_exit():
+                        try:
+                            self.on_closing()
+                        finally:
+                            try:
+                                if self.startup_root and self.startup_root.winfo_exists():
+                                    self.startup_root.destroy()
+                            finally:
+                                sys.exit()
+
                     try:
-                        if self.startup_root and self.startup_root.winfo_exists():
-                            self.startup_root.destroy()
-                    finally:
-                        sys.exit()
+                        self.root.after(0, _deferred_full_exit)
+                    except tk.TclError:
+                        _deferred_full_exit()
+
         else:
             self.store_transformations(self.current_plot)
             if self.current_plot.plotid in self.remaining_plot_ids:
@@ -738,23 +889,22 @@ class App:
 
     def save_files(self):
         """Save trees and transformation files."""
-        df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient='index')
+        df_transform = pd.DataFrame.from_dict(self.plot_transformations, orient="index")
         # Preserve Plot IDs as a column in the CSV.
-        df_transform.index.name = 'PlotID'
+        df_transform.index.name = "PlotID"
         df_transform = df_transform.reset_index()
-        transformation_dir = './Transformations'
+        transformation_dir = "./Transformations"
         if not os.path.isdir(transformation_dir):
             os.mkdir(transformation_dir)
         df_transform.to_csv(
-            f'{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv',
+            f"{transformation_dir}/Stand_{self.plot_stand.standid}_transformation.csv",
             index=False,
         )
-
 
         # Save tree data to the specified output folder
         if not os.path.isdir(self.output_folder):
             os.makedirs(self.output_folder, exist_ok=True)
-        tree_path = os.path.join(self.output_folder, f'Stand_{self.plot_stand.standid}_trees.csv')
+        tree_path = os.path.join(self.output_folder, f"Stand_{self.plot_stand.standid}_trees.csv")
         self.plot_stand.write_out().to_csv(tree_path, index=False)
 
     def show_success_dialog(self):
@@ -770,13 +920,25 @@ class App:
         # Record which action the user chose
         result = {"action": None}
 
+        def safe_close(action):
+            """Release grab and close dialog, recording action."""
+            result["action"] = action
+            try:
+                dialog.grab_release()
+            except Exception:
+                pass
+            try:
+                dialog.destroy()
+            except tk.TclError as e:
+                logging.warning(f"Error destroying success dialog: {e}")
+
         # --- Define Button Actions ---
 
         def do_show_files():
             """Opens the output folders without closing the dialog."""
             logging.info("Show Files button clicked.")
             output_folder_trees = os.path.abspath(self.output_folder)
-            output_folder_trans = os.path.abspath('./Transformations')
+            output_folder_trans = os.path.abspath("./Transformations")
             logging.info(f"Opening folders: {output_folder_trees}, {output_folder_trans}")
             try:
                 # Ensure open_in_finder is defined/imported if used
@@ -787,23 +949,14 @@ class App:
                 messagebox.showerror("Error", f"Could not open folders:\n{e}", parent=dialog)
 
         def do_continue():
-            """Closes this dialog and calls the main on_closing handler
-            to return to the startup menu."""
+            """Closes this dialog and returns 'continue' to caller."""
             logging.info("Continue button clicked.")
-            try:
-                result["action"] = "continue"
-                dialog.destroy()  # Close this dialog first
-            except tk.TclError as e:
-                logging.warning(f"Error destroying success dialog (Continue): {e}")
+            safe_close("continue")
 
         def do_exit():
             """Close this dialog and signal a full application exit."""
             logging.info("Exit button clicked.")
-            result["action"] = "exit"
-            try:
-                dialog.destroy()
-            except tk.TclError as e:
-                logging.warning(f"Error destroying success dialog (Exit): {e}")
+            safe_close("exit")
 
         # --- Configure Dialog Close Button ---
         # Make the 'X' button behave like the Exit button
@@ -836,7 +989,6 @@ class App:
         dialog.wait_window()
         logging.info(f"Success dialog finished (action={result['action']}).")
         return result["action"]
-
 
     def store_transformations(self, plot, fail=False):
         """Store per-plot transformation details for later CSV export."""
@@ -880,7 +1032,6 @@ class App:
                 "flip": pd.NA,
             }
 
-
     def reset_plot_position(self):
         if self.current_plot:
             self.current_plot.reset_transformations()
@@ -894,7 +1045,7 @@ class App:
             if plot is not None:
                 self.current_plot_index = idx
                 self.current_plot = plot
-            if self.current_plot.plotid in self.plot_transformations:
+            if self.current_plot and self.current_plot.plotid in self.plot_transformations:
                 self.plot_transformations.pop(self.current_plot.plotid)
             self.chm_stand.restore_matches()
         self.update_listboxes()
@@ -917,13 +1068,17 @@ class App:
                     affected_plots[plot] = affected_plots.get(plot, 0) + 1
 
         if not trees_to_move:
-            return #Exit without making any changes if no tree points are affected.
+            return  # Exit without making any changes if no tree points are affected.
 
         # If exactly one plot is affected and all its trees are selected, do nothing.
         if len(affected_plots) == 1:
             for plot, count in affected_plots.items():
                 if count == len(plot.trees):
-                    logging.info(f"All trees in Plot {plot.plotid} were selected. No split will be performed.")
+                    msg = (
+                        f"All trees in Plot {plot.plotid} were selected. "
+                        "No split will be performed."
+                    )
+                    logging.info(msg)
                     return  # Exit without making any changes.
 
         # Otherwise, proceed with splitting the trees into a new plot.
@@ -936,6 +1091,7 @@ class App:
             i += 1
             new_plot_id = f"{base}_split{i}"
         from trees import Plot  # Avoid circular dependency.
+
         new_center = np.mean(np.array(polygon_points), axis=0)
         new_plot = Plot(new_plot_id, center=new_center)
 
@@ -970,54 +1126,54 @@ class App:
             self.current_plot_index = idx
             self.current_plot = plot
         self.update_listboxes()
-    
-    
+
     def on_closing(self):
         logging.info("Closing App window...")
-        self.running = False # Stop the pygame loop
-    
+        self.running = False  # Stop the pygame loop
+
         # Stop keyboard listener cleanly
         if self.listener:
             self.stop_listener()
             logging.info("Keyboard listener stopped.")
-    
+
         # Cancel any pending Tkinter 'after' jobs for this window
         if self.after_id:
-             try:
-                 self.root.after_cancel(self.after_id)
-                 logging.info("Pending 'after' call cancelled.")
-             except tk.TclError as e:
-                  logging.warning(f"Could not cancel 'after' call (window likely closing): {e}")
-             self.after_id = None
-    
+            try:
+                self.root.after_cancel(self.after_id)
+                logging.info("Pending 'after' call cancelled.")
+            except tk.TclError as e:
+                logging.warning(f"Could not cancel 'after' call (window likely closing): {e}")
+            self.after_id = None
+
         # Quit Pygame
         try:
             pygame.quit()
             logging.info("Pygame quit successfully.")
         except pygame.error as e:
-             logging.warning(f"Pygame quit error (might be already quit or not init): {e}")
-    
+            logging.warning(f"Pygame quit error (might be already quit or not init): {e}")
+
         # Destroy the Toplevel window associated with the App instance
         try:
             # Ensure self.root still exists before destroying
             if self.root and self.root.winfo_exists():
-                 self.root.destroy()
-                 logging.info("App Toplevel window destroyed.")
+                self.root.destroy()
+                logging.info("App Toplevel window destroyed.")
             else:
-                 logging.info("App Toplevel window already destroyed or invalid.")
+                logging.info("App Toplevel window already destroyed or invalid.")
         except tk.TclError as e:
-             logging.error(f"Error destroying App Toplevel window: {e}")
-    
+            logging.error(f"Error destroying App Toplevel window: {e}")
+
         # Re-show the startup menu if the reference exists and it's still valid
         if self.startup_root and self.startup_root.winfo_exists():
+            startup_root = self.startup_root
             try:
-                self.startup_root.deiconify() # Show the startup menu again
+                startup_root.deiconify()  # Show the startup menu again
                 # Bring the startup window to the front and give it focus
                 try:
-                    self.startup_root.lift()
-                    self.startup_root.focus_force()
-                    self.startup_root.attributes("-topmost", True)
-                    self.startup_root.after(500, lambda: self.startup_root.attributes("-topmost", False))
+                    startup_root.lift()
+                    startup_root.focus_force()
+                    startup_root.attributes("-topmost", True)
+                    startup_root.after(500, lambda: startup_root.attributes("-topmost", False))
                 except Exception as e:
                     logging.error(f"Error bringing startup window to front: {e}")
                 logging.info("Startup root deiconified and brought to front.")
@@ -1025,21 +1181,25 @@ class App:
                 logging.error(f"Error deiconifying startup root (might be destroyed): {e}")
                 # If we can't show startup, exit the whole application cleanly
                 try:
-                     # Attempt to quit the mainloop associated with the startup root
-                     if self.startup_root and self.startup_root.winfo_exists():
-                         self.startup_root.quit()
-                except:
-                     pass # Ignore errors if already gone
-                sys.exit() # Exit application
+                    # Attempt to quit the mainloop associated with the startup root
+                    if self.startup_root and self.startup_root.winfo_exists():
+                        self.startup_root.quit()
+                except Exception:
+                    pass  # Ignore errors if already gone
+                sys.exit()  # Exit application
         else:
-            logging.warning("Startup root reference not found or window destroyed, exiting application.")
-            sys.exit() # Exit if no startup menu to return to
+            logging.warning(
+                "Startup root reference not found or window destroyed, exiting application."
+            )
+            sys.exit()  # Exit if no startup menu to return to
 
-#Given an arbitrary integer as plotid
+
+# Given an arbitrary integer as plotid
 def grey_from_plotid(plotid):
     random.seed(plotid)  # seed with the plot id so it's deterministic
     shade = random.randint(50, 240)  # choose a value between 50 and 240 for visibility
     return f"#{shade:02x}{shade:02x}{shade:02x}"
+
 
 # Canvas drawing polygon
 class PolygonDrawingWindow:
@@ -1049,21 +1209,25 @@ class PolygonDrawingWindow:
         self.root.title("Polygon Drawing")
         self.canvas_width = 800
         self.canvas_height = 600
-        self.canvas = tk.Canvas(self.root, width=self.canvas_width, height=self.canvas_height, bg="white")
+        self.canvas = tk.Canvas(
+            self.root, width=self.canvas_width, height=self.canvas_height, bg="white"
+        )
         self.canvas.pack(fill=tk.BOTH, expand=True)
-        
+
         # Initialize viewport parameters using the parent's current values.
         self.center = parent_app.stand_center  # geo coordinates (x,y)
-        self.scale = parent_app.scale_factor     # pixels per meter (or similar unit)
-        
+        self.scale = parent_app.scale_factor  # pixels per meter (or similar unit)
+
         self.polygon_points = []  # stored as geo coordinates
-        
+
         # Bind mouse events:
-        self.canvas.bind("<Button-1>", self.on_left_click)             # left-click to add a point
-        self.canvas.bind("<Button-3>", self.on_right_click)            # right-click to remove the last point
-        self.canvas.bind("<Shift-Button-3>", self.on_shift_right_click)  # shift-right-click to remove the closest point
-        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)          # mouse wheel to zoom
-        
+        self.canvas.bind("<Button-1>", self.on_left_click)  # left-click to add a point
+        self.canvas.bind("<Button-3>", self.on_right_click)  # right-click to remove the last point
+        self.canvas.bind(
+            "<Shift-Button-3>", self.on_shift_right_click
+        )  # shift-right-click to remove the closest point
+        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)  # mouse wheel to zoom
+
         # Confirm and Cancel buttons (and keyboard 'C' for confirm)
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(fill=tk.X, side=tk.BOTTOM)
@@ -1072,7 +1236,7 @@ class PolygonDrawingWindow:
         cancel_btn = tk.Button(btn_frame, text="Cancel", command=self.cancel)
         cancel_btn.pack(side=tk.LEFT, padx=5, pady=5)
         self.root.bind("c", lambda event: self.confirm())
-        
+
         self.draw()
 
     def geo_to_canvas(self, geo_point):
@@ -1088,7 +1252,7 @@ class PolygonDrawingWindow:
         return (geo_x, geo_y)
 
     def draw(self):
-        '''Redraw the canvas contents'''
+        """Redraw the canvas contents"""
         self.canvas.delete("all")
         # Draw all Layer 1 trees (from every plot)
         all_plots = self.parent_app.plot_stand.plots
@@ -1103,8 +1267,9 @@ class PolygonDrawingWindow:
                     dbh_m = 0.0
                 raw = (dbh_m * 10.0 * self.scale / 2.0) * self.parent_app.tree_scale
                 r = max(int(round(raw)), 1)
-                self.canvas.create_oval(pos[0]-r, pos[1]-r, pos[0]+r, pos[1]+r,
-                                        fill=color, outline=color)
+                self.canvas.create_oval(
+                    pos[0] - r, pos[1] - r, pos[0] + r, pos[1] + r, fill=color, outline=color
+                )
         # Draw the polygon (if any) on top.
         if len(self.polygon_points) > 1:
             canvas_points = [self.geo_to_canvas(pt) for pt in self.polygon_points]
@@ -1114,16 +1279,16 @@ class PolygonDrawingWindow:
         for pt in self.polygon_points:
             cx, cy = self.geo_to_canvas(pt)
             r = 5
-            self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r,
-                                    fill="white", outline="green", width=2)
-
+            self.canvas.create_oval(
+                cx - r, cy - r, cx + r, cy + r, fill="white", outline="green", width=2
+            )
 
     def on_left_click(self, event):
         # Left-click: add a new point.
         geo_pt = self.canvas_to_geo(event.x, event.y)
         self.polygon_points.append(geo_pt)
         # Auto-center on the new point.
-        #self.center = geo_pt
+        # self.center = geo_pt
         self.draw()
 
     def on_right_click(self, event):
@@ -1137,7 +1302,10 @@ class PolygonDrawingWindow:
         if not self.polygon_points:
             return
         geo_pt = self.canvas_to_geo(event.x, event.y)
-        distances = [((pt[0] - geo_pt[0]) ** 2 + (pt[1] - geo_pt[1]) ** 2) ** 0.5 for pt in self.polygon_points]
+        distances = [
+            ((pt[0] - geo_pt[0]) ** 2 + (pt[1] - geo_pt[1]) ** 2) ** 0.5
+            for pt in self.polygon_points
+        ]
         min_index = distances.index(min(distances))
         self.polygon_points.pop(min_index)
         self.draw()
@@ -1159,20 +1327,32 @@ class PolygonDrawingWindow:
         self.root.destroy()
 
 
-
-
 if __name__ == "__main__":
+    my_plot_centers: Optional[PlotCenters] = None
+    my_chm: Union[CHMPlot, SavedPlot]
+    my_data: Stand
+
     if len(sys.argv) == 5:
         if int(sys.argv[4]) == 1:
             my_data = SavedStand(ID=sys.argv[1], file_path=sys.argv[2])
-            my_chm = CHMPlot(file_path=sys.argv[3], x=my_data.center[0], y=my_data.center[1], dist=70)
+            if my_data.center is None:
+                raise ValueError("Stand center is not defined.")
+            my_chm = CHMPlot(
+                file_path=sys.argv[3], x=my_data.center[0], y=my_data.center[1], dist=70
+            )
             my_plot_centers = None
         elif int(sys.argv[4]) == 2:
             my_data = SavedStand(ID=sys.argv[1], file_path=sys.argv[2])
-            my_chm = SavedPlot(file_path=sys.argv[3], x=my_data.center[0], y=my_data.center[1], dist=70)
+            if my_data.center is None:
+                raise ValueError("Stand center is not defined.")
+            my_chm = SavedPlot(
+                file_path=sys.argv[3], x=my_data.center[0], y=my_data.center[1], dist=70
+            )
             my_plot_centers = None
     else:
         my_data = Stand(ID=sys.argv[1], file_path=sys.argv[2])
+        if my_data.center is None:
+            raise ValueError("Stand center is not defined.")
         my_chm = CHMPlot(file_path=sys.argv[3], x=my_data.center[0], y=my_data.center[1], dist=70)
         # PlotCenters expects only the Stand.
         my_plot_centers = PlotCenters(my_data)

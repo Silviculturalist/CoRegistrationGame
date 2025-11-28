@@ -1,7 +1,8 @@
-import pandas as pd
-import pytest
 import sys
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -11,46 +12,46 @@ from trees import Stand
 def build_stand(tmp_path):
     data = [
         {
-            'Stand': 1,
-            'PLOT': 1,
-            'TreeID': 't1',
-            'X_GROUND': 0.0,
-            'Y_GROUND': 0.0,
-            'STEMDIAM': 30.0,
-            'H': 15.0,
+            "Stand": 1,
+            "PLOT": 1,
+            "TreeID": "t1",
+            "X_GROUND": 0.0,
+            "Y_GROUND": 0.0,
+            "STEMDIAM": 30.0,
+            "H": 15.0,
         },
         {
-            'Stand': 1,
-            'PLOT': 1,
-            'TreeID': 't2',
-            'X_GROUND': 1.0,
-            'Y_GROUND': 1.0,
-            'STEMDIAM': 'bad',  # missing diameter -> should be derived from height
-            'H': 20.0,
+            "Stand": 1,
+            "PLOT": 1,
+            "TreeID": "t2",
+            "X_GROUND": 1.0,
+            "Y_GROUND": 1.0,
+            "STEMDIAM": "bad",  # missing diameter -> should be derived from height
+            "H": 20.0,
         },
         {
-            'Stand': 1,
-            'PLOT': 1,
-            'TreeID': 't3',
-            'X_GROUND': 2.0,
-            'Y_GROUND': 2.0,
-            'STEMDIAM': 30.0,
-            'H': 'bad',  # missing height -> should be derived from diameter
+            "Stand": 1,
+            "PLOT": 1,
+            "TreeID": "t3",
+            "X_GROUND": 2.0,
+            "Y_GROUND": 2.0,
+            "STEMDIAM": 30.0,
+            "H": "bad",  # missing height -> should be derived from diameter
         },
     ]
     df = pd.DataFrame(data)
-    csv_path = tmp_path / 'trees.csv'
+    csv_path = tmp_path / "trees.csv"
     df.to_csv(csv_path, index=False)
     mapping = {
-        'StandID': 'Stand',
-        'PlotID': 'PLOT',
-        'TreeID': 'TreeID',
-        'X': 'X_GROUND',
-        'Y': 'Y_GROUND',
-        'DBH': 'STEMDIAM',
-        'H': 'H',
+        "StandID": "Stand",
+        "PlotID": "PLOT",
+        "TreeID": "TreeID",
+        "X": "X_GROUND",
+        "Y": "Y_GROUND",
+        "DBH": "STEMDIAM",
+        "H": "H",
     }
-    return Stand(1, csv_path, mapping=mapping, sep=',', impute_dbh=True, impute_h=True)
+    return Stand(1, csv_path, mapping=mapping, sep=",", impute_dbh=True, impute_h=True)
 
 
 def test_height_parsing_and_derivation(tmp_path):

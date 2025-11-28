@@ -1,0 +1,12 @@
+{
+  "pythonVersion": "3.9",
+  "typeCheckingMode": "basic",
+  "include": ["."],
+  "exclude": [
+    "**/__pycache__",
+    "Data",
+    "materials"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none"
+}

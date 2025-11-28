@@ -50,7 +50,7 @@ class FractionalICP:
         return np.ascontiguousarray(pts[:, :2])
 
     def _xyz_or_xy(self, pts):
-        return np.ascontiguousarray(pts[:, :self.match_dims])
+        return np.ascontiguousarray(pts[:, : self.match_dims])
 
     # ----------------- FRMSD & matching -----------------
     def frmsd(self, fraction, num_elements, subset_source, corresponding_targets):
@@ -59,7 +59,7 @@ class FractionalICP:
             return float("inf")
         diff = self._xyz_or_xy(subset_source) - self._xyz_or_xy(corresponding_targets)
         rmse = np.sqrt(np.sum(diff**2) / num_elements)
-        return (1.0 / (fraction ** self.lambda_val)) * rmse
+        return (1.0 / (fraction**self.lambda_val)) * rmse
 
     def get_n_first_elements(self, num_elements, distances):
         return np.argsort(distances)[:num_elements]
@@ -153,4 +153,3 @@ class FractionalICP:
         self.lambda_val = 0.95 if self.match_dims == 3 else 1.3
         self._iterate()
         return self.source
-

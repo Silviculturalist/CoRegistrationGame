@@ -6,3 +6,7 @@ matplotlib
 pygame
 pynput
 tk
+black
+ruff
+mypy
+pyright

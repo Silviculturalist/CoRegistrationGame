@@ -1,10 +1,13 @@
-import pandas as pd
-import numpy as np
-from scipy.spatial.distance import cdist
+import logging
 from copy import deepcopy
-from trees import Tree, Plot
+
 import matplotlib.pyplot as plt
-import logging 
+import numpy as np
+import pandas as pd
+from scipy.spatial.distance import cdist
+
+from trees import Plot, Tree
+
 
 def Naslund1936kwargs(diameter_cm, *params):
     """
@@ -20,13 +23,14 @@ def Naslund1936kwargs(diameter_cm, *params):
     a, b, c = params
     return 1.3 + (diameter_cm / (a + b * diameter_cm)) ** c
 
+
 def plot_height_curve(params):
     """
     Generate a plot of tree height vs. diameter using the Näslund 1936 model.
 
     Parameters:
         params (list): A list of three numerical parameters for the model.
-    
+
     Returns:
         fig (matplotlib.figure.Figure): The generated figure.
     """
@@ -59,6 +63,7 @@ def to_screen_coordinates(geo_coord, stand_center, scale_factor, screen_size):
     screen_y = (geo_coord[1] - stand_center[1]) * scale_factor + screen_size[1] / 2
     return int(screen_x), int(screen_y)
 
+
 def get_viewport_scale(stand, screen_size):
     """Compute a pixel-to-world scaling factor for the viewport.
 
@@ -80,9 +85,21 @@ def get_viewport_scale(stand, screen_size):
     scale_factor = max_screen_distance / (furthest_distance + 2)  # +2 meters buffer
     return scale_factor
 
+
 class CHMPlot(Plot):
-    def __init__(self, file_path, x=None, y=None, dist=40, height_unit='m', mapping=None, sep='\t',
-                 impute_dbh: bool = False, impute_h: bool = False, naslund_params=None):
+    def __init__(
+        self,
+        file_path,
+        x=None,
+        y=None,
+        dist=40,
+        height_unit="m",
+        mapping=None,
+        sep="\t",
+        impute_dbh: bool = False,
+        impute_h: bool = False,
+        naslund_params=None,
+    ):
         """Load CHM detections as a single 'plot' and optionally crop by distance.
 
         Args:
@@ -114,13 +131,13 @@ class CHMPlot(Plot):
 
         # Set column names using mapping if provided.
         if mapping:
-            x_col = mapping.get('X', 'X').strip() or 'X'
-            y_col = mapping.get('Y', 'Y').strip() or 'Y'
-            height_col = mapping.get('H', 'H').strip() or 'H'
-            idals_col = mapping.get('TreeID', 'IDALS').strip() or 'IDALS'
-            dbh_col = mapping.get('DBH', 'DBH').strip() or 'DBH'
+            x_col = mapping.get("X", "X").strip() or "X"
+            y_col = mapping.get("Y", "Y").strip() or "Y"
+            height_col = mapping.get("H", "H").strip() or "H"
+            idals_col = mapping.get("TreeID", "IDALS").strip() or "IDALS"
+            dbh_col = mapping.get("DBH", "DBH").strip() or "DBH"
         else:
-            x_col, y_col, height_col, idals_col, dbh_col = 'X', 'Y', 'H', 'IDALS', 'DBH'
+            x_col, y_col, height_col, idals_col, dbh_col = "X", "Y", "H", "IDALS", "DBH"
 
         # Check if the height column exists in the data.
         missing_height = height_col not in df.columns
@@ -129,21 +146,21 @@ class CHMPlot(Plot):
         if x is not None and y is not None and dist is not None and dist > 0:
             coordinates = df[[x_col, y_col]].values
             point = np.array([[x, y]])
-            distances = cdist(coordinates, point, metric='euclidean')
+            distances = cdist(coordinates, point, metric="euclidean")
             df = df[distances[:, 0] <= dist]
 
         # Convert DataFrame to a list of records.
-        records = df.to_dict(orient='records')
+        records = df.to_dict(orient="records")
 
         for row in records:
             # If the height column is present, use it.
             if not missing_height:
                 try:
-                    if height_unit == 'm':
+                    if height_unit == "m":
                         height = row[height_col] * 10
-                    elif height_unit == 'dm':
+                    elif height_unit == "dm":
                         height = row[height_col]
-                    elif height_unit == 'cm':
+                    elif height_unit == "cm":
                         height = row[height_col] / 10
                 except Exception as e:
                     logging.error(f"Error processing height for row: {row} - {e}")
@@ -153,8 +170,12 @@ class CHMPlot(Plot):
             else:
                 # Height column is missing. Try to get DBH for imputation.
                 try:
-                    stemdiam_value = float(row[dbh_col]) if (dbh_col in row and row[dbh_col] not in [None, ""]) else None
-                except Exception as e:
+                    stemdiam_value = (
+                        float(row[dbh_col])
+                        if (dbh_col in row and row[dbh_col] not in [None, ""])
+                        else None
+                    )
+                except Exception:
                     stemdiam_value = None
                 height = None  # Let the Tree class impute height.
 
@@ -163,12 +184,9 @@ class CHMPlot(Plot):
                 continue
 
             # Skip rows that provide neither metric
-            if (
-                (height is None or (isinstance(height, float) and np.isnan(height)))
-                and (
-                    stemdiam_value is None
-                    or (isinstance(stemdiam_value, float) and np.isnan(stemdiam_value))
-                )
+            if (height is None or (isinstance(height, float) and np.isnan(height))) and (
+                stemdiam_value is None
+                or (isinstance(stemdiam_value, float) and np.isnan(stemdiam_value))
             ):
                 continue
 
@@ -178,9 +196,7 @@ class CHMPlot(Plot):
                 y=row[y_col],
                 stemdiam_cm=stemdiam_value,
                 height_dm=height,
-                naslund_params=self.naslund_params
-                if (self.impute_dbh or self.impute_h)
-                else None,
+                naslund_params=self.naslund_params if (self.impute_dbh or self.impute_h) else None,
             )
             if self.impute_h:
                 tree.impute_height(self.naslund_params)
@@ -194,10 +210,8 @@ class CHMPlot(Plot):
         else:
             # Avoid NaNs when CHM is empty post-filtering
             self.center = np.array([0.0, 0.0])
-        self.removed_stems = []
+        self.removed_stems: list[list[Tree]] = []
         self.alltrees = deepcopy(self.trees)
-
-
 
     def remove_matches(self, plot, min_dist_percent=15):
         """Remove CHM trees matched closely to plot trees.
@@ -228,8 +242,13 @@ class CHMPlot(Plot):
 
         if use_3d:
             for tree in plot.trees:
-                src = np.array([[float(tree.currentx), float(tree.currenty), float(tree.height)]], dtype=float)
-                tgt = np.array([[float(x.currentx), float(x.currenty), float(x.height)] for x in self.trees], dtype=float)
+                src = np.array(
+                    [[float(tree.currentx), float(tree.currenty), float(tree.height)]], dtype=float
+                )
+                tgt = np.array(
+                    [[float(x.currentx), float(x.currenty), float(x.height)] for x in self.trees],
+                    dtype=float,
+                )
                 if len(tgt) == 0:
                     break
                 dists = cdist(src, tgt).ravel()
@@ -243,7 +262,9 @@ class CHMPlot(Plot):
             # Fallback to 2D spatial matching (no height component)
             for tree in plot.trees:
                 src = np.array([[float(tree.currentx), float(tree.currenty)]], dtype=float)
-                tgt = np.array([[float(x.currentx), float(x.currenty)] for x in self.trees], dtype=float)
+                tgt = np.array(
+                    [[float(x.currentx), float(x.currenty)] for x in self.trees], dtype=float
+                )
                 if len(tgt) == 0:
                     break
                 dists = cdist(src, tgt).ravel()
@@ -283,30 +304,33 @@ class SavedPlot(CHMPlot):
         self.naslund_params = tuple(naslund_params) if naslund_params is not None else None
         reader = pd.read_csv(file_path)
         if x is not None and y is not None and dist is not None and dist > 0:
-            coordinates = reader[['CurrentX', 'CurrentY']].values
+            coordinates = reader[["CurrentX", "CurrentY"]].values
             point = np.array([[x, y]])
-            distances = cdist(coordinates, point, metric='euclidean')
+            distances = cdist(coordinates, point, metric="euclidean")
             df_filtered = reader[distances[:, 0] <= dist]
-            reader = df_filtered.to_dict(orient='records')
+            reader = df_filtered.to_dict(orient="records")
         else:
-            reader = reader.to_dict(orient='records')
+            reader = reader.to_dict(orient="records")
         for row in reader:
             height_dm = None
-            if 'Height_m' in row and row['Height_m'] not in (None, ''):
+            if "Height_m" in row and row["Height_m"] not in (None, ""):
                 try:
-                    height_dm = float(row['Height_m']) * 10.0
+                    height_dm = float(row["Height_m"]) * 10.0
                 except (ValueError, TypeError):
                     height_dm = None
             tree = Tree(
-                tree_id=row['TreeID'],
-                x=row['CurrentX'],
-                y=row['CurrentY'],
-                stemdiam_cm=row.get('Diameter_cm'),
+                tree_id=row["TreeID"],
+                x=row["CurrentX"],
+                y=row["CurrentY"],
+                stemdiam_cm=row.get("Diameter_cm"),
                 height_dm=height_dm,
                 naslund_params=self.naslund_params,
             )
             self.append_tree(tree)
-        self.center = np.mean(np.array([[tree.x, tree.y] for tree in self.trees]), axis=0) if self.trees else np.array([0.0, 0.0])
+        self.center = (
+            np.mean(np.array([[tree.x, tree.y] for tree in self.trees]), axis=0)
+            if self.trees
+            else np.array([0.0, 0.0])
+        )
         self.removed_stems = []
         self.alltrees = deepcopy(self.trees)
-

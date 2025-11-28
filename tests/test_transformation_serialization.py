@@ -1,8 +1,9 @@
-import pandas as pd
-import numpy as np
 import sys
-from pathlib import Path
 import types
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
 
 # Ensure project root on path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -10,12 +11,12 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 # Provide a minimal stub for pynput to avoid GUI dependencies during import
 mock_pynput = types.ModuleType("pynput")
 mock_keyboard = types.ModuleType("keyboard")
-mock_pynput.keyboard = mock_keyboard
+mock_pynput.keyboard = mock_keyboard  # type: ignore[attr-defined]
 sys.modules.setdefault("pynput", mock_pynput)
 sys.modules.setdefault("pynput.keyboard", mock_keyboard)
 
-from trees import Plot, Tree
-from app import App
+from app import App  # noqa: E402
+from trees import Plot, Tree  # noqa: E402
 
 
 def test_transformation_serialization_primitives(tmp_path):
